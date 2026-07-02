@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { IconPlayerPlay } from "@tabler/icons-react"
+import { IconLoader2, IconPlayerPlay } from "@tabler/icons-react"
 import {
   Background,
   Controls,
@@ -31,20 +31,22 @@ import {
   type RequestNodeData,
   type TriggerNodeData,
 } from "@/components/nodes/types"
+import type { NodeExecutionStatus } from "@/lib/execution-status"
+import { executeWorkflow } from "@/lib/execute-workflow"
 import { Inspector } from "@/components/inspector"
 import { Sidebar } from "@/components/sidebar"
 
 // Wrap each node component so it receives an `onUpdate` callback bound
-// to its own id. The wrapper takes the generic `NodeProps` (what React
-// Flow's `nodeTypes` map expects) and casts to the typed `NodeProps` per
-// component. The `onUpdate` callback lets the node's children (e.g. the
-// inline-editable label) write back to the canvas state.
+// to its own id AND its current execution status. The wrapper takes
+// the generic `NodeProps` (what React Flow's `nodeTypes` map expects)
+// and casts to the typed `NodeProps` per component.
 //
-// Recreated via `useMemo` keyed on `updateNodeData` (which is stable
-// thanks to its own `useCallback` with `[]` deps), so the wrappers
-// aren't rebuilt on every render.
+// Recreated via `useMemo` keyed on `updateNodeData` (stable) and
+// `execution` (changes per-step), so the wrappers pick up the latest
+// execution results without re-rendering on every canvas keystroke.
 const nodeTypesFor = (
-  updateNodeData: (id: string, patch: Partial<NodeData>) => void
+  updateNodeData: (id: string, patch: Partial<NodeData>) => void,
+  getStatus: (nodeId: string) => NodeExecutionStatus
 ) => ({
   trigger: (props: NodeProps) => {
     const typed = props as NodeProps<Node<TriggerNodeData>>
@@ -52,6 +54,7 @@ const nodeTypesFor = (
       <TriggerNode
         {...typed}
         onUpdate={(patch) => updateNodeData(typed.id, patch)}
+        executionStatus={getStatus(typed.id)}
       />
     )
   },
@@ -61,6 +64,7 @@ const nodeTypesFor = (
       <RequestNode
         {...typed}
         onUpdate={(patch) => updateNodeData(typed.id, patch)}
+        executionStatus={getStatus(typed.id)}
       />
     )
   },
@@ -257,12 +261,80 @@ export function Canvas() {
     [nodes]
   )
 
-  const handleExecuteWorkflow = useCallback(() => {
-    // Placeholder: in a real app this would walk the graph from the
-    // Manuell trigger forward and run each node. For now, just log so
-    // the button has observable behavior.
-    console.log("[execute] workflow")
-  }, [])
+  // Workflow execution: per-node status and aggregated results/errors.
+  // Transient state — not persisted, not part of the dirty snapshot.
+  const [execution, setExecution] = useState<{
+    running: boolean
+    /** Node currently being executed (drives the blue pulsing ring). */
+    currentNodeId: string | null
+    /** Successful return values keyed by nodeId. */
+    results: Record<string, unknown>
+    /** Error messages keyed by nodeId. */
+    errors: Record<string, string>
+    startedAt: number | null
+    finishedAt: number | null
+  }>({
+    running: false,
+    currentNodeId: null,
+    results: {},
+    errors: {},
+    startedAt: null,
+    finishedAt: null,
+  })
+
+  const handleExecuteWorkflow = useCallback(async () => {
+    // Find the Manuell trigger. The button only shows when one exists,
+    // so this is just a guard.
+    const trigger = nodes.find(
+      (n) =>
+        n.type === "trigger" &&
+        (n.data as TriggerNodeData).triggerType === "manual"
+    )
+    if (!trigger) return
+
+    setExecution({
+      running: true,
+      currentNodeId: null,
+      results: {},
+      errors: {},
+      startedAt: Date.now(),
+      finishedAt: null,
+    })
+
+    try {
+      for await (const step of executeWorkflow(
+        nodes,
+        edges,
+        trigger.id
+      )) {
+        setExecution((prev) => {
+          if (step.type === "start") {
+            return { ...prev, currentNodeId: step.nodeId }
+          }
+          if (step.type === "success") {
+            return {
+              ...prev,
+              currentNodeId: null,
+              results: { ...prev.results, [step.nodeId]: step.result },
+            }
+          }
+          // error — clear the running marker and record the message.
+          return {
+            ...prev,
+            currentNodeId: null,
+            errors: { ...prev.errors, [step.nodeId]: step.error },
+          }
+        })
+      }
+    } finally {
+      setExecution((prev) => ({
+        ...prev,
+        running: false,
+        currentNodeId: null,
+        finishedAt: Date.now(),
+      }))
+    }
+  }, [nodes, edges])
 
   // Serialize the current workflow to a JSON file and trigger a browser
   // download. The filename includes a timestamp so successive downloads
@@ -417,6 +489,20 @@ export function Canvas() {
   )
   const handlePaneClick = useCallback(() => closeInspector(), [closeInspector])
 
+  // Derive each node's execution status from the current execution
+  // state. `currentNodeId` is the one currently running; everything
+  // else in `results`/`errors` is terminal. New runs clear both maps
+  // when the engine starts, so the status resets cleanly.
+  const getNodeExecutionStatus = useCallback(
+    (nodeId: string): NodeExecutionStatus => {
+      if (execution.currentNodeId === nodeId) return "running"
+      if (execution.errors[nodeId] !== undefined) return "error"
+      if (execution.results[nodeId] !== undefined) return "success"
+      return "idle"
+    },
+    [execution]
+  )
+
   return (
     <ReactFlowProvider>
       <div
@@ -426,7 +512,7 @@ export function Canvas() {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          nodeTypes={nodeTypesFor(updateNodeData)}
+          nodeTypes={nodeTypesFor(updateNodeData, getNodeExecutionStatus)}
           elementsSelectable
           nodesConnectable
           deleteKeyCode={["Delete", "Backspace"]}
@@ -465,11 +551,16 @@ export function Canvas() {
           <Button
             type="button"
             onClick={handleExecuteWorkflow}
-            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 gap-2 shadow-lg"
+            disabled={execution.running}
+            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 gap-2 shadow-lg disabled:opacity-70"
             size="default"
           >
-            <IconPlayerPlay className="size-4" stroke={2.5} aria-hidden />
-            Execute Workflow
+            {execution.running ? (
+              <IconLoader2 className="size-4 animate-spin" stroke={2.5} aria-hidden />
+            ) : (
+              <IconPlayerPlay className="size-4" stroke={2.5} aria-hidden />
+            )}
+            {execution.running ? "Running…" : "Execute Workflow"}
           </Button>
         ) : null}
       </div>
@@ -490,6 +581,20 @@ export function Canvas() {
             : null
         }
         data={inspectorNode?.data ?? {}}
+        // Execution log for the currently selected node — the Inspector
+        // shows the last result (or error) below the form so the user
+        // can see what each step produced.
+        nodeResult={
+          inspectorNode
+            ? execution.results[inspectorNode.id]
+            : undefined
+        }
+        nodeError={
+          inspectorNode
+            ? execution.errors[inspectorNode.id]
+            : undefined
+        }
+        isRunning={execution.running}
         onChange={(patch) =>
           inspectorNode ? updateNodeData(inspectorNode.id, patch) : undefined
         }

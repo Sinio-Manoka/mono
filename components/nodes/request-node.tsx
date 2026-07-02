@@ -4,11 +4,13 @@ import { IconWorld } from "@tabler/icons-react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
 
 import { cn } from "@/lib/utils"
+import type { NodeExecutionStatus } from "@/lib/execution-status"
 import type { RequestNodeData } from "@/components/nodes/types"
 
 export function RequestNode(
   props: NodeProps<Node<RequestNodeData>> & {
     onUpdate: (patch: Partial<RequestNodeData>) => void
+    executionStatus?: NodeExecutionStatus
   }
 ) {
   // The label is shown on the card for visual context, but it's NOT
@@ -16,16 +18,24 @@ export function RequestNode(
   // DrawerTitle (the NodeLabel that lives there). Keeping the card's
   // label display-only avoids the "click the card to edit vs click the
   // card to select" conflict we hit when the label was inline-editable.
-  const { data, selected } = props
+  const { data, selected, executionStatus = "idle" } = props
   void props.onUpdate
   const { label = "Request" } = data
   return (
     <div
       className={cn(
         "min-w-40 cursor-pointer rounded-lg border bg-card p-3 text-card-foreground shadow-sm transition-shadow",
-        selected
+        // Selection ring (when idle and selected).
+        selected && executionStatus === "idle"
           ? "border-ring shadow-md ring-2 ring-ring/30"
-          : "border-border"
+          : "border-border",
+        // Execution rings override the selection ring.
+        executionStatus === "running" &&
+          "border-blue-500 ring-2 ring-blue-500/50 animate-pulse",
+        executionStatus === "success" &&
+          "border-emerald-500 ring-2 ring-emerald-500/40",
+        executionStatus === "error" &&
+          "border-red-500 ring-2 ring-red-500/40"
       )}
     >
       <Handle
