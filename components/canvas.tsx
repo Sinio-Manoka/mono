@@ -1,0 +1,473 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { IconPlayerPlay } from "@tabler/icons-react"
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
+  type Connection,
+  type Edge,
+  type EdgeChange,
+  type Node,
+  type NodeChange,
+} from "@xyflow/react"
+
+import "@xyflow/react/dist/style.css"
+
+import { Button } from "@/components/ui/button"
+import { TriggerNode } from "@/components/nodes/trigger-node"
+import { RequestNode } from "@/components/nodes/request-node"
+import {
+  UNIQUE_CATALOG_KEYS,
+  type NodeData,
+  type NodeType,
+  type TriggerNodeData,
+} from "@/components/nodes/types"
+import { Inspector } from "@/components/inspector"
+import { Sidebar } from "@/components/sidebar"
+
+const nodeTypes = { trigger: TriggerNode, request: RequestNode }
+
+const initialNodes: Node<NodeData>[] = [
+  {
+    id: "trigger-1",
+    type: "trigger",
+    position: { x: 0, y: 0 },
+    data: { label: "On Request", triggerType: "request" },
+  },
+  {
+    id: "request-1",
+    type: "request",
+    position: { x: 280, y: 0 },
+    data: {
+      label: "HTTP Request",
+      method: "GET",
+      url: "https://api.example.com",
+    },
+  },
+]
+
+const initialEdges: Edge[] = [{ id: "e1", source: "trigger-1", target: "request-1" }]
+
+/**
+ * Maps React Flow's user-facing CSS variables to the shadcn tokens defined in
+ * `app/globals.css`. Set inline on the wrapper so Tailwind v4's CSS tree-shake
+ * doesn't strip them as "unused" (the references live in
+ * `node_modules/@xyflow/react/dist/style.css`, which Tailwind doesn't scan).
+ * Because the shadcn tokens themselves change with `[data-theme="dark"]`, the
+ * RF colors automatically follow light/dark mode without any duplication here.
+ */
+const reactFlowThemeStyle = {
+  "--xy-background-color": "var(--background)",
+  "--xy-background-pattern-color": "var(--border)",
+
+  "--xy-edge-stroke": "var(--muted-foreground)",
+  "--xy-edge-stroke-selected": "var(--primary)",
+  "--xy-connectionline-stroke-color": "var(--primary)",
+  "--xy-edge-label-background-color": "var(--card)",
+  "--xy-edge-label-color": "var(--card-foreground)",
+
+  "--xy-handle-background-color": "var(--muted-foreground)",
+  "--xy-handle-border-color": "var(--background)",
+
+  "--xy-selection-background-color":
+    "color-mix(in oklch, var(--primary) 8%, transparent)",
+  "--xy-selection-border": "1px dashed var(--primary)",
+
+  "--xy-controls-button-background-color": "var(--card)",
+  "--xy-controls-button-background-color-hover": "var(--accent)",
+  "--xy-controls-button-color": "var(--card-foreground)",
+  "--xy-controls-button-color-hover": "var(--accent-foreground)",
+  "--xy-controls-button-border-color": "var(--border)",
+  "--xy-controls-box-shadow": "0 0 0 1px var(--border)",
+
+  "--xy-minimap-background-color": "var(--card)",
+  "--xy-minimap-mask-background-color":
+    "color-mix(in oklch, var(--foreground) 6%, transparent)",
+  "--xy-minimap-mask-stroke-color": "var(--border)",
+  "--xy-minimap-node-background-color": "var(--muted)",
+  "--xy-minimap-node-stroke-color": "var(--border)",
+
+  "--xy-attribution-background-color":
+    "color-mix(in oklch, var(--card) 80%, transparent)",
+
+  "--xy-node-boxshadow-hover":
+    "0 1px 4px 1px color-mix(in oklch, var(--foreground) 6%, transparent)",
+  "--xy-node-boxshadow-selected": "0 0 0 2px var(--ring)",
+} as React.CSSProperties
+
+export function Canvas() {
+  const [nodes, setNodes] = useState<Node<NodeData>[]>(initialNodes)
+  const [edges, setEdges] = useState<Edge[]>(initialEdges)
+  // The inspector is driven by a dedicated id, not by React Flow's built-in
+  // `selected` flag. That way single-click can still set the visual selection
+  // (the ring on the node) without opening the drawer — only a double click
+  // opens it.
+  const [inspectorNodeId, setInspectorNodeId] = useState<string | null>(null)
+  // `saveState` drives the Save button's transient feedback (the spinner /
+  // brief "Saved!" toast). The persistent "saved" vs "dirty" state comes
+  // from `hasChanges`, which is a memoized comparison of the current canvas
+  // state against the last successfully-saved snapshot.
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved"
+  >("idle")
+  // Stringified snapshot of the last persisted state. State (not a ref)
+  // so updating it triggers a re-render and the `hasChanges` memo below
+  // re-evaluates — refs can't be read during render, and reading
+  // `lastSavedSnapshotRef.current` inside a `useMemo` would trip the
+  // `react-hooks/refs` lint rule.
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("")
+
+  // On mount, load the persisted workflow from the API. If a snapshot
+  // exists, replace the default `initialNodes` / `initialEdges` with it
+  // AND record it as the "last saved" baseline so the Save button starts
+  // in its "Saved" (clean) state. A failure (404 / network) just keeps
+  // the defaults — the user still sees the example flow, and `hasChanges`
+  // will report dirty so they can save it for the first time.
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/workflow")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
+        if (cancelled || !data) return
+        if (Array.isArray(data.nodes) && Array.isArray(data.edges)) {
+          if (data.nodes.length > 0 || data.edges.length > 0) {
+            setNodes(data.nodes)
+            setEdges(data.edges)
+            setLastSavedSnapshot(
+              JSON.stringify({ nodes: data.nodes, edges: data.edges })
+            )
+          }
+          // Empty snapshot on the server — leave `lastSavedSnapshot` as
+          // "" so the current default state reads as dirty.
+        }
+      })
+      .catch(() => {
+        // Network error — keep the defaults. No user-visible error needed
+        // for the first-load case.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // True iff the current canvas state diverges from the last persisted
+  // snapshot. Drives whether the Save button reads "Save" (actionable)
+  // or "Saved" (clean).
+  const hasChanges = useMemo(() => {
+    const current = JSON.stringify({ nodes, edges })
+    return current !== lastSavedSnapshot
+  }, [nodes, edges, lastSavedSnapshot])
+
+  const handleSave = useCallback(async () => {
+    setSaveState("saving")
+    try {
+      const snapshot = { nodes, edges }
+      const res = await fetch("/api/workflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapshot),
+      })
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`)
+      // Record the now-persisted snapshot so `hasChanges` flips back to
+      // false and the button reads "Saved" again.
+      setLastSavedSnapshot(JSON.stringify(snapshot))
+      setSaveState("saved")
+      // Drop back to "idle" after a moment so the button doesn't sit on
+      // "Saved!" forever.
+      setTimeout(() => setSaveState("idle"), 2000)
+    } catch (err) {
+      console.error("[save] workflow", err)
+      setSaveState("idle")
+    }
+  }, [nodes, edges])
+
+  const inspectorNode = useMemo(
+    () => nodes.find((n) => n.id === inspectorNodeId) ?? null,
+    [nodes, inspectorNodeId]
+  )
+
+  // Catalog keys that should be hidden from the picker. Right now only
+  // "trigger-manual" is limited to one — the workflow can have at most a
+  // single Manuell start node. Adding more limits is a matter of extending
+  // UNIQUE_CATALOG_KEYS and this check.
+  const disabledCatalogKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const key of UNIQUE_CATALOG_KEYS) {
+      if (key === "trigger-manual") {
+        const has = nodes.some(
+          (n) =>
+            n.type === "trigger" &&
+            (n.data as TriggerNodeData).triggerType === "manual"
+        )
+        if (has) keys.add(key)
+      }
+    }
+    return keys
+  }, [nodes])
+
+  // Whether a Manuell trigger is currently on the canvas. The Execute
+  // button only makes sense when there's something to execute, so it's
+  // gated on this.
+  const hasManuellTrigger = useMemo(
+    () =>
+      nodes.some(
+        (n) =>
+          n.type === "trigger" &&
+          (n.data as TriggerNodeData).triggerType === "manual"
+      ),
+    [nodes]
+  )
+
+  const handleExecuteWorkflow = useCallback(() => {
+    // Placeholder: in a real app this would walk the graph from the
+    // Manuell trigger forward and run each node. For now, just log so
+    // the button has observable behavior.
+    console.log("[execute] workflow")
+  }, [])
+
+  // Serialize the current workflow to a JSON file and trigger a browser
+  // download. The filename includes a timestamp so successive downloads
+  // don't overwrite each other in the user's Downloads folder.
+  const handleDownload = useCallback(() => {
+    const workflow = { nodes, edges }
+    const json = JSON.stringify(workflow, null, 2)
+    const blob = new Blob([json], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    const now = new Date()
+    const pad = (n: number) => n.toString().padStart(2, "0")
+    const stamp =
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+      `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
+    a.download = `workflow-${stamp}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [nodes, edges])
+
+  // Open a file picker, read the selected file as JSON, and replace the
+  // current canvas with the parsed workflow. The loaded JSON is also
+  // recorded as the "last saved" baseline so the Save button reads
+  // "Saved" (clean) rather than "Save" (dirty) right after import.
+  const handleLoad = useCallback(() => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = "application/json,.json"
+    input.style.display = "none"
+    input.onchange = (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) {
+        document.body.removeChild(input)
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = (readEvent) => {
+        try {
+          const text = readEvent.target?.result
+          if (typeof text !== "string") {
+            throw new Error("File is not text")
+          }
+          const parsed = JSON.parse(text) as {
+            nodes?: Node<NodeData>[]
+            edges?: Edge[]
+          }
+          if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+            throw new Error(
+              "Missing `nodes` or `edges` array in the workflow file"
+            )
+          }
+          setNodes(parsed.nodes)
+          setEdges(parsed.edges)
+          // Treat the loaded file as the new baseline — no unsaved changes.
+          setLastSavedSnapshot(text)
+          setSaveState("saved")
+          setTimeout(() => setSaveState("idle"), 2000)
+        } catch (err) {
+          console.error("[load] invalid workflow file", err)
+        } finally {
+          document.body.removeChild(input)
+        }
+      }
+      reader.onerror = () => {
+        console.error("[load] failed to read file")
+        document.body.removeChild(input)
+      }
+      reader.readAsText(file)
+    }
+    document.body.appendChild(input)
+    input.click()
+  }, [])
+
+  const updateNodeData = useCallback(
+    (id: string, patch: Partial<NodeData>) => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === id ? { ...n, data: { ...n.data, ...patch } } : n
+        )
+      )
+    },
+    []
+  )
+
+  const deleteNode = useCallback((id: string) => {
+    setNodes((nds) => nds.filter((n) => n.id !== id))
+    setEdges((eds) =>
+      eds.filter((e) => e.source !== id && e.target !== id)
+    )
+  }, [])
+
+  const addNode = useCallback(
+    (type: NodeType, initialData?: Partial<NodeData>) => {
+      setNodes((nds) => {
+        // Place each new node on an 8-wide grid that starts at (100, 100)
+        // and wraps every 8 columns, so successive picks produce a tidy
+        // diagonal cascade instead of overlapping at a single point.
+        const index = nds.length
+        const col = index % 8
+        const row = Math.floor(index / 8)
+        const id = `${type}-${Date.now().toString(36)}-${index}`
+        const defaults: NodeData =
+          type === "trigger"
+            ? { label: "New trigger", triggerType: "manual" }
+            : { label: "New request", method: "GET" }
+        const data: NodeData = { ...defaults, ...initialData }
+        return [
+          ...nds,
+          {
+            id,
+            type,
+            position: { x: 100 + col * 200, y: 100 + row * 160 },
+            data,
+          },
+        ]
+      })
+    },
+    []
+  )
+
+  const closeInspector = useCallback(() => {
+    setInspectorNodeId(null)
+  }, [])
+
+  // Stable handlers for React Flow. Re-creating them on every render forces
+  // RF to re-bind its event listeners and, in v12 + React 19, can stall the
+  // next pointer event by a frame or two — which is what was making the
+  // "delete then click another node" interaction feel like 1-2s of lag.
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) =>
+      setNodes((nds) => applyNodeChanges(changes, nds)),
+    []
+  )
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) =>
+      setEdges((eds) => applyEdgeChanges(changes, eds)),
+    []
+  )
+  const handleConnect = useCallback(
+    (connection: Connection) =>
+      setEdges((eds) => addEdge({ ...connection }, eds)),
+    []
+  )
+  const handleNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: Node<NodeData>) => {
+      setInspectorNodeId(node.id)
+    },
+    []
+  )
+  const handlePaneClick = useCallback(() => closeInspector(), [closeInspector])
+
+  return (
+    <ReactFlowProvider>
+      <div
+        className="relative h-svh w-full"
+        style={reactFlowThemeStyle}
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          elementsSelectable
+          nodesConnectable
+          deleteKeyCode={["Delete", "Backspace"]}
+          // Left-drag on the pane draws a marquee to multi-select nodes.
+          // Panning is moved to the middle (1) and right (2) mouse buttons
+          // so the two gestures don't fight each other on a left-drag.
+          selectionOnDrag
+          panOnDrag={[1, 2]}
+          onConnect={handleConnect}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
+          onNodeDoubleClick={handleNodeDoubleClick}
+          onPaneClick={handlePaneClick}
+          snapToGrid
+          snapGrid={[16, 16]}
+          fitView
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={16} size={2} />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+
+        <Sidebar
+          onAddNode={addNode}
+          onSave={handleSave}
+          onDownload={handleDownload}
+          onLoad={handleLoad}
+          saveState={saveState}
+          hasChanges={hasChanges}
+          disabledKeys={disabledCatalogKeys}
+          className="absolute top-4 right-4 z-10"
+        />
+
+        {hasManuellTrigger ? (
+          <Button
+            type="button"
+            onClick={handleExecuteWorkflow}
+            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 gap-2 shadow-lg"
+            size="default"
+          >
+            <IconPlayerPlay className="size-4" stroke={2.5} aria-hidden />
+            Execute Workflow
+          </Button>
+        ) : null}
+      </div>
+
+      <Inspector
+        // Keying on the inspector node id (instead of the array) means the
+        // form remounts each time the drawer targets a different node, which
+        // keeps the local input state fresh.
+        key={inspectorNode?.id ?? "empty"}
+        // Passing `null` when the node has been deleted (or never existed)
+        // also closes the drawer — Vaul calls `onOpenChange(false)` and we
+        // clear `inspectorNodeId` in response.
+        nodeId={inspectorNode?.id ?? null}
+        nodeType={
+          inspectorNode &&
+          (inspectorNode.type === "trigger" || inspectorNode.type === "request")
+            ? inspectorNode.type
+            : null
+        }
+        data={inspectorNode?.data ?? {}}
+        onChange={(patch) =>
+          inspectorNode ? updateNodeData(inspectorNode.id, patch) : undefined
+        }
+        onDelete={() =>
+          inspectorNode ? deleteNode(inspectorNode.id) : undefined
+        }
+        onOpenChange={(open) => {
+          if (!open) closeInspector()
+        }}
+      />
+    </ReactFlowProvider>
+  )
+}

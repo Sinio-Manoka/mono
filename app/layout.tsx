@@ -1,6 +1,7 @@
 import { Geist, Geist_Mono, Noto_Sans } from "next/font/google"
 
 import "./globals.css"
+import { AgentationToolbar } from "@/components/agentation"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ export default function RootLayout({
     >
       <body>
         <ThemeProvider>{children}</ThemeProvider>
+        <AgentationToolbar />
       </body>
     </html>
   )
