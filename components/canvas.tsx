@@ -16,6 +16,7 @@ import {
   type EdgeChange,
   type Node,
   type NodeChange,
+  type NodeProps,
 } from "@xyflow/react"
 
 import "@xyflow/react/dist/style.css"
@@ -27,12 +28,43 @@ import {
   UNIQUE_CATALOG_KEYS,
   type NodeData,
   type NodeType,
+  type RequestNodeData,
   type TriggerNodeData,
 } from "@/components/nodes/types"
 import { Inspector } from "@/components/inspector"
 import { Sidebar } from "@/components/sidebar"
 
-const nodeTypes = { trigger: TriggerNode, request: RequestNode }
+// Wrap each node component so it receives an `onUpdate` callback bound
+// to its own id. The wrapper takes the generic `NodeProps` (what React
+// Flow's `nodeTypes` map expects) and casts to the typed `NodeProps` per
+// component. The `onUpdate` callback lets the node's children (e.g. the
+// inline-editable label) write back to the canvas state.
+//
+// Recreated via `useMemo` keyed on `updateNodeData` (which is stable
+// thanks to its own `useCallback` with `[]` deps), so the wrappers
+// aren't rebuilt on every render.
+const nodeTypesFor = (
+  updateNodeData: (id: string, patch: Partial<NodeData>) => void
+) => ({
+  trigger: (props: NodeProps) => {
+    const typed = props as NodeProps<Node<TriggerNodeData>>
+    return (
+      <TriggerNode
+        {...typed}
+        onUpdate={(patch) => updateNodeData(typed.id, patch)}
+      />
+    )
+  },
+  request: (props: NodeProps) => {
+    const typed = props as NodeProps<Node<RequestNodeData>>
+    return (
+      <RequestNode
+        {...typed}
+        onUpdate={(patch) => updateNodeData(typed.id, patch)}
+      />
+    )
+  },
+})
 
 const initialNodes: Node<NodeData>[] = [
   {
@@ -394,7 +426,7 @@ export function Canvas() {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          nodeTypes={nodeTypes}
+          nodeTypes={nodeTypesFor(updateNodeData)}
           elementsSelectable
           nodesConnectable
           deleteKeyCode={["Delete", "Backspace"]}

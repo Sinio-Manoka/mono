@@ -8,15 +8,12 @@ import { IconApi, IconBolt, IconWorld, type Icon } from "@tabler/icons-react"
 
 export type TriggerNodeData = {
   label?: string
-  /** Short hint shown under the label in the node card. */
-  subtitle?: string
   /** What kind of trigger this is — "manual" fires from a button, "request" from an incoming HTTP call. */
   triggerType?: "manual" | "request"
 }
 
 export type RequestNodeData = {
   label?: string
-  subtitle?: string
   /** HTTP method. Free-form string so we can extend past the common four. */
   method?: string
   /** Target URL. */

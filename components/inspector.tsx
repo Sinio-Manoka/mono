@@ -12,6 +12,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer"
 import { cn } from "@/lib/utils"
+import { NodeLabel } from "@/components/nodes/node-label"
 import type {
   NodeData,
   NodeType,
@@ -77,14 +78,25 @@ export function Inspector({
         )}
       >
         {/* Top bar — title block anchored to the drawer's top-left corner,
-            action buttons to the top-right. Both float above the body. */}
+            action buttons to the top-right. Both float above the body.
+            The title is the node's name, inline-editable in place via
+            <NodeLabel> (the same component used to live on the node
+            card). The description below it is the node type — replacing
+            the id that used to live here. */}
         <div className="absolute inset-x-4 top-4 z-10 flex items-start justify-between gap-2">
           <div>
             <DrawerTitle>
-              {nodeType === "trigger" ? "Trigger" : "Request"}
+              <NodeLabel
+                value={(localData.label as string | undefined) ?? ""}
+                onChange={(value) => apply({ label: value })}
+                // `text-base` overrides the NodeLabel default `text-sm`
+                // so the title sits at the same size the surrounding
+                // DrawerTitle typography expects.
+                className="text-base"
+              />
             </DrawerTitle>
             <DrawerDescription className="font-mono">
-              {nodeId}
+              {nodeType ?? "unknown"}
             </DrawerDescription>
           </div>
           <div className="flex items-center gap-1">
@@ -111,17 +123,6 @@ export function Inspector({
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-col gap-4 px-4 pb-8 pt-20">
-          <Field
-            label="Label"
-            value={(localData.label as string | undefined) ?? ""}
-            onChange={(value) => apply({ label: value })}
-          />
-          <Field
-            label="Subtitle"
-            value={(localData.subtitle as string | undefined) ?? ""}
-            onChange={(value) => apply({ subtitle: value })}
-          />
-
           {nodeType === "request" ? (
             <>
               <SelectField
