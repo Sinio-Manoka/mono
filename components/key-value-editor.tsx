@@ -149,23 +149,14 @@ export function KeyValueEditor({
               placeholder="Value"
               className="w-full px-2 py-1.5 border rounded text-sm bg-background"
             />
-            <Button
-              type="button"
-              onClick={handleAddPair}
-              className="w-full"
-              size="sm"
-            >
+            <Button type="button" onClick={handleAddPair} className="w-full" size="sm">
               <IconPlus className="size-4 mr-1" />
               Add
             </Button>
           </div>
 
           {/* Save button */}
-          <Button
-            type="button"
-            onClick={handleSave}
-            className="w-full"
-          >
+          <Button type="button" onClick={handleSave} className="w-full">
             Save
           </Button>
         </div>

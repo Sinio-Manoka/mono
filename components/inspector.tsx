@@ -26,7 +26,9 @@ import {
 } from "@/components/ui/drawer"
 import { cn } from "@/lib/utils"
 import { NodeLabel } from "@/components/nodes/node-label"
+import { AuthEditor } from "@/components/auth-editor"
 import { KeyValueEditor } from "@/components/key-value-editor"
+import { TextEditor } from "@/components/text-editor"
 import { JsonViewer } from "@/components/json-viewer"
 import type {
   NodeData,
@@ -214,17 +216,17 @@ export function Inspector({
                   value={(localData as RequestNodeData).headers ?? ""}
                   onChange={(value) => apply({ headers: value })}
                 />
-                <Field
-                  label="Bearer Token"
+                <AuthEditor
                   value={(localData as RequestNodeData).authToken ?? ""}
                   onChange={(value) => apply({ authToken: value })}
-                  placeholder="your-token-here"
                 />
-                <Field
+                <TextEditor
                   label="Body"
+                  description="Request payload (JSON or text)"
                   value={(localData as RequestNodeData).body ?? ""}
                   onChange={(value) => apply({ body: value })}
                   placeholder='{"key": "value"}'
+                  rows={6}
                 />
               </div>
             ) : (

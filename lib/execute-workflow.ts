@@ -77,9 +77,34 @@ const executors: Record<string, NodeExecutor> = {
       }
     }
 
-    // Add Bearer token if provided
+    // Parse and apply auth configuration
     if (data.authToken?.trim()) {
-      headers["Authorization"] = `Bearer ${data.authToken.trim()}`
+      try {
+        const auth = JSON.parse(data.authToken)
+        switch (auth.type) {
+          case "bearer":
+            if (auth.token) {
+              headers["Authorization"] = `Bearer ${auth.token}`
+            }
+            break
+          case "basic":
+            if (auth.username && auth.password) {
+              const credentials = btoa(`${auth.username}:${auth.password}`)
+              headers["Authorization"] = `Basic ${credentials}`
+            }
+            break
+          case "api-key":
+            if (auth.apiKeyHeader && auth.apiKey) {
+              headers[auth.apiKeyHeader] = auth.apiKey
+            }
+            break
+          case "none":
+          default:
+            break
+        }
+      } catch (err) {
+        throw new Error(`Invalid auth configuration JSON: ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
 
     // Parse body
