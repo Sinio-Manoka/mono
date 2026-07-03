@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { IconLoader2, IconPlayerPlay } from "@tabler/icons-react"
+import { IconBolt, IconLoader2 } from "@tabler/icons-react"
 import {
   Background,
   Controls,
@@ -861,13 +861,13 @@ export function Canvas() {
             type="button"
             onClick={handleExecuteWorkflow}
             disabled={execution.running}
-            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 gap-2 rounded-full bg-gradient-to-r from-primary to-primary/80 px-8 py-3 font-semibold tracking-tight text-primary-foreground shadow-xl transition-all hover:shadow-2xl hover:scale-105 disabled:opacity-60 disabled:scale-100"
+            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 inline-flex h-11 items-center gap-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 px-6 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/25 ring-1 ring-inset ring-white/10 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
             size="lg"
           >
             {execution.running ? (
-              <IconLoader2 className="size-5 animate-spin" stroke={2} aria-hidden />
+              <IconLoader2 className="size-4 animate-spin" stroke={2.5} aria-hidden />
             ) : (
-              <IconPlayerPlay className="size-5 fill-current" stroke={1.5} aria-hidden />
+              <IconBolt className="size-4" stroke={2} aria-hidden />
             )}
             {execution.running ? "Running…" : "Execute"}
           </Button>
