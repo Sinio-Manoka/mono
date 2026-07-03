@@ -10,6 +10,8 @@ export type TriggerNodeData = {
   label?: string
   /** What kind of trigger this is — "manual" fires from a button, "request" from an incoming HTTP call. */
   triggerType?: "manual" | "request"
+  /** Input data to pass to the workflow (JSON string). */
+  inputData?: string
 }
 
 export type RequestNodeData = {

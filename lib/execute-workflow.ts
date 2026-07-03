@@ -37,10 +37,45 @@ type NodeExecutor = (node: Node, input: unknown) => Promise<unknown>
 const executors: Record<string, NodeExecutor> = {
   trigger: async (node, input) => {
     const data = node.data as TriggerNodeData
+
+    // Parse input data from the trigger configuration
+    let triggerInput: unknown = input
+    if (data.inputData?.trim()) {
+      try {
+        const inputConfig = JSON.parse(data.inputData)
+        switch (inputConfig.type) {
+          case "json":
+            if (inputConfig.json) {
+              try {
+                triggerInput = JSON.parse(inputConfig.json)
+              } catch {
+                triggerInput = inputConfig.json
+              }
+            }
+            break
+          case "text":
+            triggerInput = inputConfig.text || ""
+            break
+          case "form":
+            if (inputConfig.form && Array.isArray(inputConfig.form)) {
+              triggerInput = Object.fromEntries(
+                inputConfig.form.map((f: { key: string; value: string }) => [f.key, f.value])
+              )
+            }
+            break
+          default:
+            triggerInput = inputConfig
+        }
+      } catch {
+        // If not valid JSON, use as raw input
+        triggerInput = data.inputData
+      }
+    }
+
     return {
       type: data.triggerType ?? "manual",
       startedAt: Date.now(),
-      input,
+      input: triggerInput,
     }
   },
   request: async (node, input) => {

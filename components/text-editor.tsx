@@ -60,7 +60,7 @@ export function TextEditor({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" className="w-full justify-between">
+        <Button type="button" variant="outline" className="w-full justify-between" style={{ borderRadius: "10px" }}>
           <span>{label}</span>
           <span className="text-xs text-muted-foreground">
             {value ? `${value.length} chars` : "empty"}

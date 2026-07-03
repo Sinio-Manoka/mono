@@ -61,7 +61,7 @@ export function AuthEditor({ value, onChange }: AuthEditorProps) {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" className="w-full justify-between">
+        <Button type="button" variant="outline" className="w-full justify-between" style={{ borderRadius: "10px" }}>
           <span>Authorization</span>
           <span className="text-xs text-muted-foreground">{getDisplayText()}</span>
         </Button>
@@ -100,7 +100,8 @@ export function AuthEditor({ value, onChange }: AuthEditorProps) {
                   value={authData.token || ""}
                   onChange={(e) => setAuthData({ ...authData, token: e.target.value })}
                   placeholder="Enter your bearer token"
-                  className="w-full px-3 py-2 border rounded text-sm bg-background"
+                  className="w-full px-3 py-2 border text-sm bg-background"
+                  style={{ borderRadius: "10px" }}
                 />
               </div>
             )}
@@ -114,7 +115,8 @@ export function AuthEditor({ value, onChange }: AuthEditorProps) {
                     value={authData.username || ""}
                     onChange={(e) => setAuthData({ ...authData, username: e.target.value })}
                     placeholder="Username"
-                    className="w-full px-3 py-2 border rounded text-sm bg-background"
+                    className="w-full px-3 py-2 border text-sm bg-background"
+                    style={{ borderRadius: "10px" }}
                   />
                 </div>
                 <div className="space-y-2">
@@ -124,7 +126,8 @@ export function AuthEditor({ value, onChange }: AuthEditorProps) {
                     value={authData.password || ""}
                     onChange={(e) => setAuthData({ ...authData, password: e.target.value })}
                     placeholder="Password"
-                    className="w-full px-3 py-2 border rounded text-sm bg-background"
+                    className="w-full px-3 py-2 border text-sm bg-background"
+                    style={{ borderRadius: "10px" }}
                   />
                 </div>
               </>
@@ -139,7 +142,8 @@ export function AuthEditor({ value, onChange }: AuthEditorProps) {
                     value={authData.apiKeyHeader || ""}
                     onChange={(e) => setAuthData({ ...authData, apiKeyHeader: e.target.value })}
                     placeholder="e.g., X-API-Key"
-                    className="w-full px-3 py-2 border rounded text-sm bg-background"
+                    className="w-full px-3 py-2 border text-sm bg-background"
+                    style={{ borderRadius: "10px" }}
                   />
                 </div>
                 <div className="space-y-2">
@@ -149,7 +153,8 @@ export function AuthEditor({ value, onChange }: AuthEditorProps) {
                     value={authData.apiKey || ""}
                     onChange={(e) => setAuthData({ ...authData, apiKey: e.target.value })}
                     placeholder="Enter your API key"
-                    className="w-full px-3 py-2 border rounded text-sm bg-background"
+                    className="w-full px-3 py-2 border text-sm bg-background"
+                    style={{ borderRadius: "10px" }}
                   />
                 </div>
               </>

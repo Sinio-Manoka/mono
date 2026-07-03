@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { NodeLabel } from "@/components/nodes/node-label"
 import { AuthEditor } from "@/components/auth-editor"
 import { BodyEditor } from "@/components/body-editor"
+import { InputDataEditor } from "@/components/input-data-editor"
 import { KeyValueEditor } from "@/components/key-value-editor"
 import { TextEditor } from "@/components/text-editor"
 import { JsonViewer } from "@/components/json-viewer"
@@ -33,6 +34,7 @@ import type {
   NodeData,
   NodeType,
   RequestNodeData,
+  TriggerNodeData,
 } from "@/components/nodes/types"
 
 type InspectorProps = {
@@ -208,6 +210,13 @@ export function Inspector({
                 <BodyEditor
                   value={(localData as RequestNodeData).body ?? ""}
                   onChange={(value) => apply({ body: value })}
+                />
+              </div>
+            ) : nodeType === "trigger" ? (
+              <div className="flex flex-col gap-4">
+                <InputDataEditor
+                  value={(localData as TriggerNodeData).inputData ?? ""}
+                  onChange={(value) => apply({ inputData: value })}
                 />
               </div>
             ) : (

@@ -6,35 +6,32 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { JsonEditor } from "@/components/json-editor"
 
-type BodyType = "raw" | "form-data" | "form-urlencoded" | "graphql"
+type DataType = "json" | "text" | "form"
 
-type BodyData = {
-  type: BodyType
-  raw?: string
-  formData?: Array<{ key: string; value: string }>
-  graphql?: { query: string; variables?: string }
+type InputData = {
+  type: DataType
+  json?: string
+  text?: string
+  form?: Array<{ key: string; value: string }>
 }
 
-type KeyValuePair = { key: string; value: string }
-
-type BodyEditorProps = {
+type InputDataEditorProps = {
   value: string
   onChange: (value: string) => void
 }
 
-export function BodyEditor({ value, onChange }: BodyEditorProps) {
+export function InputDataEditor({ value, onChange }: InputDataEditorProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [bodyData, setBodyData] = useState<BodyData>(() => {
+  const [inputData, setInputData] = useState<InputData>(() => {
     try {
-      return value ? JSON.parse(value) : { type: "raw", raw: "" }
+      return value ? JSON.parse(value) : { type: "json", json: "" }
     } catch {
-      return { type: "raw", raw: value || "" }
+      return { type: "json", json: value || "" }
     }
   })
 
@@ -42,7 +39,7 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
   const [newValue, setNewValue] = useState("")
 
   const handleSave = () => {
-    onChange(JSON.stringify(bodyData))
+    onChange(JSON.stringify(inputData))
     setIsOpen(false)
   }
 
@@ -51,23 +48,21 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
   }
 
   const getDisplayText = () => {
-    switch (bodyData.type) {
-      case "form-data":
-        return `Form Data (${bodyData.formData?.length || 0} fields)`
-      case "form-urlencoded":
-        return "URL Encoded"
-      case "graphql":
-        return "GraphQL"
+    switch (inputData.type) {
+      case "form":
+        return `Form (${inputData.form?.length || 0} fields)`
+      case "text":
+        return inputData.text ? `${inputData.text.length} chars` : "empty"
       default:
-        return bodyData.raw ? `${bodyData.raw.length} chars` : "empty"
+        return inputData.json ? `${inputData.json.length} chars` : "empty"
     }
   }
 
   const handleAddFormField = () => {
     if (newKey.trim()) {
-      setBodyData((prev) => ({
+      setInputData((prev) => ({
         ...prev,
-        formData: [...(prev.formData || []), { key: newKey.trim(), value: newValue }],
+        form: [...(prev.form || []), { key: newKey.trim(), value: newValue }],
       }))
       setNewKey("")
       setNewValue("")
@@ -75,17 +70,17 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
   }
 
   const handleRemoveFormField = (index: number) => {
-    setBodyData((prev) => ({
+    setInputData((prev) => ({
       ...prev,
-      formData: prev.formData?.filter((_, i) => i !== index) || [],
+      form: prev.form?.filter((_, i) => i !== index) || [],
     }))
   }
 
   const handleUpdateFormField = (index: number, key: string, val: string) => {
-    setBodyData((prev) => {
-      const updated = [...(prev.formData || [])]
+    setInputData((prev) => {
+      const updated = [...(prev.form || [])]
       updated[index] = { key, value: val }
-      return { ...prev, formData: updated }
+      return { ...prev, form: updated }
     })
   }
 
@@ -93,93 +88,73 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button type="button" variant="outline" className="w-full justify-between" style={{ borderRadius: "10px" }}>
-          <span>Body</span>
+          <span>Input Data</span>
           <span className="text-xs text-muted-foreground">{getDisplayText()}</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="!max-w-4xl !w-[95vw] !h-[80vh] flex flex-col overflow-hidden p-0">
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ backgroundColor: "#171B1F" }}>
           <div>
-            <DialogTitle className="text-base">Body</DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">Configure request body content</p>
+            <DialogTitle className="text-base">Input Data</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">Data to pass to the workflow</p>
           </div>
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden px-6 py-4 gap-4 min-h-[300px]" style={{ backgroundColor: "#171B1F" }}>
-          {/* Body Type Selection */}
+          {/* Data Type Selection */}
           <div className="flex-shrink-0">
             <p className="text-xs font-semibold text-muted-foreground mb-2">Type</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {(["raw", "form-data", "form-urlencoded", "graphql"] as BodyType[]).map((type) => (
+            <div className="grid grid-cols-3 gap-2">
+              {(["json", "text", "form"] as DataType[]).map((type) => (
                 <Button
                   key={type}
                   type="button"
-                  variant={bodyData.type === type ? "default" : "outline"}
-                  onClick={() => setBodyData({ ...bodyData, type })}
+                  variant={inputData.type === type ? "default" : "outline"}
+                  onClick={() => setInputData({ ...inputData, type })}
                   className="capitalize text-xs"
                   size="sm"
                 >
-                  {type === "form-data" ? "Form Data" : type === "form-urlencoded" ? "URL Encoded" : type === "graphql" ? "GraphQL" : "Raw"}
+                  {type === "json" ? "JSON" : type === "form" ? "Key-Value" : "Text"}
                 </Button>
               ))}
             </div>
           </div>
 
-          {/* Raw Editor */}
-          {bodyData.type === "raw" && (
+          {/* JSON Editor */}
+          {inputData.type === "json" && (
             <JsonEditor
-              value={bodyData.raw || ""}
-              onChange={(val) => setBodyData({ ...bodyData, raw: val })}
-              placeholder='{"key": "value"}'
+              value={inputData.json || ""}
+              onChange={(val) => setInputData({ ...inputData, json: val })}
+              placeholder='{"key": "value", "count": 42}'
               className="flex-1"
             />
           )}
 
-          {/* GraphQL Editor */}
-          {bodyData.type === "graphql" && (
-            <div className="flex-1 flex flex-col overflow-hidden gap-3">
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">Query</p>
-                <div className="flex-1 overflow-hidden border border-border bg-background" style={{ borderRadius: "10px" }}>
-                  <textarea
-                    value={bodyData.graphql?.query || ""}
-                    onChange={(e) =>
-                      setBodyData({
-                        ...bodyData,
-                        graphql: { ...bodyData.graphql, query: e.target.value } as any,
-                      })
-                    }
-                    placeholder="query { ... }"
-                    className="w-full h-full p-4 text-sm font-mono text-foreground resize-none overflow-auto outline-none placeholder:text-muted-foreground"
-                  />
-                </div>
-              </div>
-
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">Variables (JSON)</p>
-                <JsonEditor
-                  value={bodyData.graphql?.variables || ""}
-                  onChange={(val) =>
-                    setBodyData({
-                      ...bodyData,
-                      graphql: { ...bodyData.graphql, variables: val } as any,
-                    })
-                  }
-                  placeholder='{"key": "value"}'
-                  className="flex-1"
+          {/* Text Editor */}
+          {inputData.type === "text" && (
+            <div className="flex-1 flex flex-col overflow-hidden gap-2">
+              <div className="flex-1 overflow-hidden border border-border bg-background" style={{ borderRadius: "10px" }}>
+                <textarea
+                  value={inputData.text || ""}
+                  onChange={(e) => setInputData({ ...inputData, text: e.target.value })}
+                  placeholder="Enter any text data..."
+                  className="w-full h-full p-4 text-sm font-mono text-foreground resize-none overflow-auto outline-none placeholder:text-muted-foreground"
                 />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {inputData.text?.length || 0} character{(inputData.text?.length || 0) !== 1 ? "s" : ""}
               </div>
             </div>
           )}
 
-          {/* Form Data & URL Encoded */}
-          {(bodyData.type === "form-data" || bodyData.type === "form-urlencoded") && (
+          {/* Form/Key-Value Editor */}
+          {inputData.type === "form" && (
             <div className="flex-1 flex flex-col overflow-hidden gap-3">
               {/* Existing pairs */}
-              {(bodyData.formData || []).length > 0 && (
+              {(inputData.form || []).length > 0 && (
                 <div className="flex-1 overflow-y-auto border bg-muted/30" style={{ borderRadius: "10px" }}>
                   <div className="divide-y">
-                    {(bodyData.formData || []).map((pair, index) => (
+                    {(inputData.form || []).map((pair, index) => (
                       <div key={index} className="p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <input

@@ -80,7 +80,7 @@ export function KeyValueEditor({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" className="w-full justify-between">
+        <Button type="button" variant="outline" className="w-full justify-between" style={{ borderRadius: "10px" }}>
           <span>{label}</span>
           <span className="text-xs text-muted-foreground">
             {pairCount > 0 ? `${pairCount}` : "0"}
@@ -95,7 +95,7 @@ export function KeyValueEditor({
         <div className="space-y-3">
           {/* List of existing pairs */}
           {pairs.length > 0 && (
-            <div className="border rounded bg-muted/30 max-h-56 overflow-y-auto">
+            <div className="border bg-muted/30 max-h-56 overflow-y-auto" style={{ borderRadius: "10px" }}>
               <div className="divide-y">
                 {pairs.map((pair, index) => (
                   <div key={index} className="p-3 space-y-2">
@@ -105,7 +105,8 @@ export function KeyValueEditor({
                         value={pair.key}
                         onChange={(e) => handleUpdateKey(index, e.target.value)}
                         placeholder="Key"
-                        className="flex-1 px-2 py-1 border rounded text-sm bg-background"
+                        className="flex-1 px-2 py-1 border text-sm bg-background"
+                        style={{ borderRadius: "10px" }}
                       />
                       <Button
                         type="button"
@@ -122,7 +123,8 @@ export function KeyValueEditor({
                       value={pair.value}
                       onChange={(e) => handleUpdateValue(index, e.target.value)}
                       placeholder="Value"
-                      className="w-full px-2 py-1 border rounded text-sm bg-background"
+                      className="w-full px-2 py-1 border text-sm bg-background"
+                      style={{ borderRadius: "10px" }}
                     />
                   </div>
                 ))}
@@ -131,7 +133,7 @@ export function KeyValueEditor({
           )}
 
           {/* Add new pair */}
-          <div className="border rounded p-3 space-y-2 bg-muted/30">
+          <div className="border p-3 space-y-2 bg-muted/30" style={{ borderRadius: "10px" }}>
             <p className="text-xs font-semibold text-muted-foreground">Add New</p>
             <input
               type="text"
@@ -139,7 +141,8 @@ export function KeyValueEditor({
               onChange={(e) => setNewKey(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddPair()}
               placeholder="Key"
-              className="w-full px-2 py-1.5 border rounded text-sm bg-background"
+              className="w-full px-2 py-1.5 border text-sm bg-background"
+              style={{ borderRadius: "10px" }}
             />
             <input
               type="text"
@@ -147,7 +150,8 @@ export function KeyValueEditor({
               onChange={(e) => setNewValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddPair()}
               placeholder="Value"
-              className="w-full px-2 py-1.5 border rounded text-sm bg-background"
+              className="w-full px-2 py-1.5 border text-sm bg-background"
+              style={{ borderRadius: "10px" }}
             />
             <Button type="button" onClick={handleAddPair} className="w-full" size="sm">
               <IconPlus className="size-4 mr-1" />
