@@ -1,9 +1,17 @@
 "use client"
 
-import { useState, useMemo, useRef, useCallback, type ChangeEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react"
 import {
   IconBolt,
   IconChevronLeft,
+  IconSearch,
   IconTrash,
   IconWorld,
   IconX,
@@ -22,6 +30,7 @@ import {
 import "@xyflow/react/dist/style.css"
 
 import { Button } from "@/components/ui/button"
+import { Select } from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -780,21 +789,12 @@ function SelectField({
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <select
+      <Select
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
-          "text-foreground outline-none transition-colors",
-          "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-        )}
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+        options={options}
+        onChange={onChange}
+        aria-label={label}
+      />
     </label>
   )
 }
@@ -981,6 +981,32 @@ function DataPanel({
   focusPath: string | null
   onClose: () => void
 }) {
+  // Search lives at the panel level so the input can sit in the header
+  // next to the node name, matching the rest of the workflow's chrome.
+  // The query is forwarded to JsonViewer which uses it for filtering
+  // and match-counting — JsonViewer renders no search UI of its own
+  // when we pass these props.
+  const [search, setSearch] = useState("")
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Ctrl/Cmd+F focuses the search input; Escape blurs it (and clears
+  // the query so the tree goes back to its unfiltered state).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+        return
+      }
+      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
+        setSearch("")
+        searchInputRef.current?.blur()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [])
   const node = nodes.find((n) => n.id === nodeId)
   if (!node) return null
 
@@ -1045,6 +1071,22 @@ function DataPanel({
             {label}
           </span>
         </div>
+        {/* Search input — owned by the panel so it sits next to the node
+            name. `pr-1` keeps the X close button from crowding it. The
+            input uses `min-w-0` so it can shrink instead of pushing the
+            row wider than the column. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <IconSearch className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search (Ctrl+F)…"
+            aria-label={`Search in ${label}`}
+            className="min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+          />
+        </div>
         <Button
           type="button"
           variant="ghost"
@@ -1069,6 +1111,8 @@ function DataPanel({
             title={label}
             nodeLabel={label}
             focusPath={focusPath}
+            search={search}
+            onSearchChange={setSearch}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 px-2 py-3 text-center text-xs text-muted-foreground">

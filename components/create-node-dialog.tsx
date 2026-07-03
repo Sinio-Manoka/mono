@@ -13,7 +13,7 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
+import { Select } from "@/components/ui/select"
 import {
   NODE_CATALOG,
   type NodeData,
@@ -185,21 +185,15 @@ function FieldRenderer({
         {field.label}
       </span>
       {field.type === "select" ? (
-        <select
+        <Select
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn(
-            "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
-            "text-foreground outline-none transition-colors",
-            "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-          )}
-        >
-          {field.options?.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          options={(field.options ?? []).map((o) => ({
+            value: o.value,
+            label: o.label,
+          }))}
+          onChange={onChange}
+          aria-label={field.label}
+        />
       ) : (
         <Input
           value={value}

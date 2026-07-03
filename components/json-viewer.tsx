@@ -21,6 +21,13 @@ type JsonViewerProps = {
    *  element gets a highlight ring so the user can spot it instantly.
    *  Pass `null` (the default) to leave the tree alone. */
   focusPath?: string | null
+  /** Controlled search query. When provided together with
+   *  `onSearchChange`, JsonViewer uses it for filtering/highlighting and
+   *  skips its own search input — the host UI (e.g. DataPanel header)
+   *  owns the input. Omit both props for the default internal search UI
+   *  with a Ctrl+F shortcut. */
+  search?: string
+  onSearchChange?: (value: string) => void
 }
 
 type ExpandedState = Set<string>
@@ -76,9 +83,24 @@ function parentPathsOf(path: string): string[] {
   return ancestors.slice(0, -1)
 }
 
-export function JsonViewer({ data, title, nodeLabel, focusPath }: JsonViewerProps) {
-  const [search, setSearch] = useState("")
+export function JsonViewer({
+  data,
+  title,
+  nodeLabel,
+  focusPath,
+  search: searchProp,
+  onSearchChange,
+}: JsonViewerProps) {
+  const isSearchControlled = searchProp !== undefined
+  const [internalSearch, setInternalSearch] = useState("")
   const [showSearch, setShowSearch] = useState(false)
+  // When the host passes `search`, use it; otherwise fall back to
+  // internal state. `setSearch` always routes through the right setter
+  // so the rest of the component doesn't care which mode it's in.
+  const search = isSearchControlled ? searchProp : internalSearch
+  const setSearch = isSearchControlled
+    ? (onSearchChange ?? (() => {}))
+    : setInternalSearch
   // User-driven expand/collapse only. `expanded` (below) is the merged
   // view used by `renderValue` — it adds focus-path ancestors on top of
   // this set so user toggles survive focus changes without a cascading
@@ -137,8 +159,10 @@ export function JsonViewer({ data, title, nodeLabel, focusPath }: JsonViewerProp
     }
   }
 
-  // Ctrl+F / Cmd+F to toggle search
+  // Ctrl+F / Cmd+F to toggle search. Only attaches when the host isn't
+  // driving search externally — the host owns Ctrl+F when controlled.
   useEffect(() => {
+    if (isSearchControlled) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault()
@@ -150,7 +174,7 @@ export function JsonViewer({ data, title, nodeLabel, focusPath }: JsonViewerProp
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [])
+  }, [isSearchControlled])
 
   const toggleExpand = (path: string) => {
     setUserExpanded((prev) => {
@@ -472,8 +496,33 @@ export function JsonViewer({ data, title, nodeLabel, focusPath }: JsonViewerProp
 
   return (
     <div className="flex flex-col h-full gap-0 bg-background rounded-lg border border-border overflow-hidden">
-      {/* Hint and expand button */}
-      {!showSearch && (
+      {/* Header strip. Three modes:
+          - Controlled search: just copy + expand (no Ctrl+F hint, no
+            search input — host owns the search UI in its own header).
+          - Uncontrolled, search closed: Ctrl+F hint + copy + expand.
+          - Uncontrolled, search open: full search bar (handled below). */}
+      {isSearchControlled ? (
+        <div className="flex items-center justify-end gap-1 px-3 py-2 border-b border-border bg-muted/20">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleCopy}
+            className="h-7 w-7 p-0"
+            title="Copy"
+          >
+            {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsExpandedView(true)}
+            className="h-7 w-7 p-0"
+            title="Expand"
+          >
+            <IconArrowsMaximize className="size-4" />
+          </Button>
+        </div>
+      ) : !showSearch ? (
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/20 text-xs text-muted-foreground">
           <span>Press <kbd className="px-1.5 py-0.5 bg-background border border-border rounded text-xs">Ctrl+F</kbd> to search</span>
           <div className="flex items-center gap-1">
@@ -497,10 +546,11 @@ export function JsonViewer({ data, title, nodeLabel, focusPath }: JsonViewerProp
             </Button>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Search Bar */}
-      {showSearch && (
+      {/* Search Bar (uncontrolled mode only — controlled host renders
+          its own search input). */}
+      {!isSearchControlled && showSearch && (
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
           <input
             type="text"
