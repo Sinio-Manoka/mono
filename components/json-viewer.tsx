@@ -14,11 +14,13 @@ import { cn } from "@/lib/utils"
 type JsonViewerProps = {
   data: unknown
   title?: string
+  /** Node label for drag-and-drop expressions (e.g., "Request" -> "{{Request.field}}") */
+  nodeLabel?: string
 }
 
 type ExpandedState = Set<string>
 
-export function JsonViewer({ data, title }: JsonViewerProps) {
+export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
   const [search, setSearch] = useState("")
   const [showSearch, setShowSearch] = useState(false)
   const [expanded, setExpanded] = useState<ExpandedState>(new Set(["root"]))
@@ -146,6 +148,39 @@ export function JsonViewer({ data, title }: JsonViewerProps) {
     )
   }
 
+  // Convert internal path (root.body.id) to expression ({{NodeLabel.body.id}})
+  const pathToExpression = (path: string): string => {
+    if (!nodeLabel) return ""
+    const cleanPath = path.replace(/^root\.?/, "")
+    return cleanPath ? `{{${nodeLabel}.${cleanPath}}}` : `{{${nodeLabel}}}`
+  }
+
+  // Draggable wrapper for values
+  const DraggableValue = ({
+    path,
+    children,
+  }: {
+    path: string
+    children: React.ReactNode
+  }) => {
+    if (!nodeLabel) return <>{children}</>
+    const expr = pathToExpression(path)
+    return (
+      <span
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", expr)
+          e.dataTransfer.setData("application/x-expression", expr)
+          e.dataTransfer.effectAllowed = "copy"
+        }}
+        className="cursor-grab active:cursor-grabbing hover:bg-primary/10 rounded px-0.5 -mx-0.5"
+        title={`Drag to insert ${expr}`}
+      >
+        {children}
+      </span>
+    )
+  }
+
   const renderValue = (
     value: unknown,
     key: string | number | null,
@@ -155,30 +190,46 @@ export function JsonViewer({ data, title }: JsonViewerProps) {
     const isExpanded = expanded.has(path)
 
     if (value === null) {
-      return <span className="text-red-500">null</span>
+      return (
+        <DraggableValue path={path}>
+          <span className="text-red-500">null</span>
+        </DraggableValue>
+      )
     }
 
     if (value === undefined) {
-      return <span className="text-red-500">undefined</span>
+      return (
+        <DraggableValue path={path}>
+          <span className="text-red-500">undefined</span>
+        </DraggableValue>
+      )
     }
 
     if (typeof value === "boolean") {
       return (
-        <span className="text-blue-500">
-          {value ? "true" : "false"}
-        </span>
+        <DraggableValue path={path}>
+          <span className="text-blue-500">
+            {value ? "true" : "false"}
+          </span>
+        </DraggableValue>
       )
     }
 
     if (typeof value === "number") {
-      return <span className="text-orange-500">{value}</span>
+      return (
+        <DraggableValue path={path}>
+          <span className="text-orange-500">{value}</span>
+        </DraggableValue>
+      )
     }
 
     if (typeof value === "string") {
       return (
-        <span className="text-green-600 dark:text-green-400">
-          "{highlightText(value)}"
-        </span>
+        <DraggableValue path={path}>
+          <span className="text-green-600 dark:text-green-400">
+            "{highlightText(value)}"
+          </span>
+        </DraggableValue>
       )
     }
 
@@ -261,17 +312,20 @@ export function JsonViewer({ data, title }: JsonViewerProps) {
                 const valueStr = JSON.stringify(v)
                 const valueMatch = shouldShowItem(valueStr)
                 const show = keyMatch || valueMatch
+                const keyPath = `${path}.${k}`
 
                 return (
                   <div
                     key={k}
                     className={cn("flex gap-2", !show && "opacity-30")}
                   >
-                    <span className="text-purple-600 dark:text-purple-400">
-                      {highlightText(k)}:
-                    </span>
+                    <DraggableValue path={keyPath}>
+                      <span className="text-purple-600 dark:text-purple-400">
+                        {highlightText(k)}:
+                      </span>
+                    </DraggableValue>
                     <div>
-                      {renderValue(v, k, `${path}.${k}`, depth + 1)}
+                      {renderValue(v, k, keyPath, depth + 1)}
                     </div>
                   </div>
                 )

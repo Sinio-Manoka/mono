@@ -2,7 +2,8 @@
 
 import { useState, type ChangeEvent } from "react"
 import {
-  IconArrowsMaximize,
+  IconChevronDown,
+  IconCopy,
   IconTrash,
   IconX,
 } from "@tabler/icons-react"
@@ -42,6 +43,8 @@ type InspectorProps = {
   nodeId: string | null
   nodeType: NodeType | null
   data: NodeData
+  /** All node results from the workflow execution, keyed by node label. */
+  allNodeResults?: Record<string, unknown>
   /** Result of the last successful execution of this node (if any). */
   nodeResult?: unknown
   /** Error message from the last failed execution of this node (if any). */
@@ -65,6 +68,7 @@ export function Inspector({
   nodeId,
   nodeType,
   data,
+  allNodeResults,
   nodeResult,
   nodeError,
   isRunning,
@@ -77,6 +81,13 @@ export function Inspector({
   // `key={nodeId}` so the component remounts when the selection changes,
   // which keeps this state fresh without a syncing effect.
   const [localData, setLocalData] = useState<NodeData>(data)
+
+  // Track which nodes are expanded in the Available Data panel
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+
+  const expandNode = (nodeLabel: string) => {
+    setExpandedNodes((prev) => new Set(prev).add(nodeLabel))
+  }
 
   // `Partial<NodeData>` is the union of the per-type partials, so a patch
   // built for either side is assignable. We use a single function instead
@@ -163,9 +174,48 @@ export function Inspector({
         </div>
 
         <div className="relative mx-auto grid w-full grid-cols-1 gap-6 px-4 pb-8 pt-20 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
-          {/* Left spacer — 1fr column, only rendered on lg so the form
-              is centered. On mobile the form spans the full column. */}
-          <div className="hidden lg:block" aria-hidden />
+          {/* Left column: available data from upstream nodes. Users can reference
+              any node's output using {{NodeLabel.field}} syntax. */}
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-2 h-[400px] overflow-hidden">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Available Data
+              </h3>
+              {allNodeResults && (
+                <span className="text-[10px] text-muted-foreground">
+                  {Object.keys(allNodeResults).length} node{Object.keys(allNodeResults).length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+
+            {allNodeResults && Object.keys(allNodeResults).length > 0 ? (
+              <div className="flex-1 space-y-1 overflow-y-auto">
+                {Object.entries(allNodeResults).map(([label, result]) => (
+                  <NodeDataAccordion
+                    key={label}
+                    label={label}
+                    data={result}
+                    isExpanded={expandedNodes.has(label)}
+                    onToggle={() => {
+                      setExpandedNodes((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(label)) {
+                          next.delete(label)
+                        } else {
+                          next.add(label)
+                        }
+                        return next
+                      })
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground overflow-y-auto">
+                No upstream data. Connect nodes and run the workflow.
+              </div>
+            )}
+          </div>
 
           {/* Center: the editable form. The grid's `auto` middle column
               sizes to the form's content (max-w-sm on mobile, w-80 on
@@ -190,6 +240,8 @@ export function Inspector({
                   value={(localData as RequestNodeData).url ?? ""}
                   onChange={(value) => apply({ url: value })}
                   placeholder="https://api.example.com"
+                  onExpressionClick={expandNode}
+                  availableData={allNodeResults}
                 />
                 <KeyValueEditor
                   label="Query Parameters"
@@ -290,29 +342,164 @@ function Field({
   value,
   onChange,
   placeholder,
+  onExpressionClick,
+  availableData,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  onExpressionClick?: (nodeLabel: string) => void
+  availableData?: Record<string, unknown>
 }) {
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
+
+  // Check if a full expression path exists in the data
+  const isValidPath = (expr: string): boolean => {
+    if (!availableData) return false
+    const path = expr.replace(/^\{\{|\}\}$/g, "").trim()
+    const parts = path.split(".")
+    const nodeLabel = parts[0]
+
+    if (!(nodeLabel in availableData)) return false
+
+    let current: unknown = availableData[nodeLabel]
+    for (let i = 1; i < parts.length; i++) {
+      if (current === null || current === undefined) return false
+      if (typeof current !== "object") return false
+      const key = parts[i]
+      if (!(key in (current as Record<string, unknown>))) return false
+      current = (current as Record<string, unknown>)[key]
+    }
+    return true
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLInputElement>) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const expr = e.dataTransfer.getData("application/x-expression") ||
+                 e.dataTransfer.getData("text/plain")
+    if (expr) {
+      const input = e.currentTarget
+      const start = input.selectionStart ?? value.length
+      const end = input.selectionEnd ?? value.length
+      const newValue = value.slice(0, start) + expr + value.slice(end)
+      onChange(newValue)
+      setTimeout(() => {
+        input.setSelectionRange(start + expr.length, start + expr.length)
+        input.focus()
+      }, 0)
+    }
+  }
+
+  // Parse expressions and render highlighted text (only for valid paths)
+  const renderHighlightedValue = () => {
+    if (!value) return null
+    const parts: React.ReactNode[] = []
+    const regex = /(\{\{[^}]+\}\})/g
+    let lastIndex = 0
+    let match
+
+    while ((match = regex.exec(value)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(
+          <span key={`text-${lastIndex}`}>
+            {value.slice(lastIndex, match.index)}
+          </span>
+        )
+      }
+      // Check if the expression references a valid path
+      const expr = match[1]
+      const nodeLabel = expr.replace(/^\{\{|\}\}$/g, "").split(".")[0]
+      const isValid = isValidPath(expr)
+
+      if (isValid) {
+        // Highlight valid expression
+        parts.push(
+          <span
+            key={`expr-${match.index}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onExpressionClick?.(nodeLabel)
+            }}
+            className="bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded px-0.5 cursor-pointer hover:bg-orange-500/30 transition-colors"
+          >
+            {expr}
+          </span>
+        )
+      } else {
+        // Render invalid expression as normal text
+        parts.push(
+          <span key={`expr-${match.index}`}>
+            {expr}
+          </span>
+        )
+      }
+      lastIndex = match.index + match[0].length
+    }
+    // Add remaining text
+    if (lastIndex < value.length) {
+      parts.push(
+        <span key={`text-${lastIndex}`}>
+          {value.slice(lastIndex)}
+        </span>
+      )
+    }
+    return parts
+  }
+
+  // Only consider it as having valid expressions if at least one path is valid
+  const hasValidExpressions = (() => {
+    const regex = /(\{\{[^}]+\}\})/g
+    let match
+    while ((match = regex.exec(value)) !== null) {
+      if (isValidPath(match[1])) return true
+    }
+    return false
+  })()
+
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-          onChange(event.target.value)
-        }
-        placeholder={placeholder}
-        className={cn(
-          "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
-          "text-foreground placeholder:text-muted-foreground",
-          "outline-none transition-colors",
-          "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+      <div className="relative">
+        <input
+          type="text"
+          value={value}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            onChange(event.target.value)
+          }
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsDragOver(true)
+          }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={handleDrop}
+          placeholder={placeholder}
+          className={cn(
+            "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
+            "text-foreground placeholder:text-muted-foreground",
+            "outline-none transition-colors",
+            "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30",
+            isDragOver && "border-primary ring-2 ring-primary/30 bg-primary/5",
+            hasValidExpressions && !isFocused && "text-transparent caret-foreground"
+          )}
+        />
+        {/* Overlay for highlighted expressions - only show when not focused */}
+        {hasValidExpressions && !isFocused && (
+          <div
+            className="absolute inset-0 flex items-center px-3 text-sm pointer-events-none"
+            aria-hidden
+          >
+            <span className="truncate pointer-events-auto">
+              {renderHighlightedValue()}
+            </span>
+          </div>
         )}
-      />
+      </div>
     </label>
   )
 }
@@ -347,6 +534,63 @@ function SelectField({
         ))}
       </select>
     </label>
+  )
+}
+
+function NodeDataAccordion({
+  label,
+  data,
+  isExpanded,
+  onToggle,
+}: {
+  label: string
+  data: unknown
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const copyRef = () => {
+    navigator.clipboard.writeText(`{{${label}}}`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className={cn(
+      "rounded-md border overflow-hidden transition-colors",
+      isExpanded ? "border-orange-500/50 bg-orange-500/5" : "border-border bg-muted/20"
+    )}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
+      >
+        <IconChevronDown
+          className={cn(
+            "size-3.5 text-muted-foreground transition-transform",
+            isExpanded && "rotate-180"
+          )}
+        />
+        <span className="text-xs font-semibold flex-1 truncate">{label}</span>
+        <code
+          onClick={(e) => {
+            e.stopPropagation()
+            copyRef()
+          }}
+          className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1"
+          title="Click to copy"
+        >
+          {copied ? "Copied!" : `{{${label}}}`}
+          <IconCopy className="size-3" />
+        </code>
+      </button>
+      {isExpanded && (
+        <div className="border-t border-border max-h-48 overflow-y-auto">
+          <JsonViewer data={data} title={label} nodeLabel={label} />
+        </div>
+      )}
+    </div>
   )
 }
 

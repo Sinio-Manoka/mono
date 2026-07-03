@@ -13,11 +13,6 @@ export function RequestNode(
     executionStatus?: NodeExecutionStatus
   }
 ) {
-  // The label is shown on the card for visual context, but it's NOT
-  // inline-editable here — the editable surface is the Inspector's
-  // DrawerTitle (the NodeLabel that lives there). Keeping the card's
-  // label display-only avoids the "click the card to edit vs click the
-  // card to select" conflict we hit when the label was inline-editable.
   const { data, selected, executionStatus = "idle" } = props
   void props.onUpdate
   const { label = "Request" } = data
@@ -25,11 +20,9 @@ export function RequestNode(
     <div
       className={cn(
         "min-w-40 cursor-pointer rounded-lg border bg-card p-3 text-card-foreground shadow-sm transition-shadow",
-        // Selection ring (when idle and selected).
         selected && executionStatus === "idle"
           ? "border-ring shadow-md ring-2 ring-ring/30"
           : "border-border",
-        // Execution rings override the selection ring.
         executionStatus === "running" &&
           "border-blue-500 ring-2 ring-blue-500/50 animate-pulse",
         executionStatus === "success" &&

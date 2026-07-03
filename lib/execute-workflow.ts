@@ -7,6 +7,59 @@ import type {
 } from "@/components/nodes/types"
 
 /**
+ * Resolves `{{NodeLabel.path}}` expressions in a string using results from
+ * previous nodes. Supports dot notation for nested access.
+ *
+ * Examples:
+ *   {{Request.body.id}} -> accesses results["Request"].body.id
+ *   {{Trigger.input}}   -> accesses results["Trigger"].input
+ */
+function resolveExpressions(
+  value: string,
+  nodeResults: Record<string, unknown>
+): string {
+  return value.replace(/\{\{([^}]+)\}\}/g, (match, expr: string) => {
+    const parts = expr.trim().split(".")
+    const nodeLabel = parts[0]
+    const path = parts.slice(1)
+
+    let current: unknown = nodeResults[nodeLabel]
+    if (current === undefined) return match // Keep original if node not found
+
+    for (const key of path) {
+      if (current === null || current === undefined) return match
+      if (typeof current === "object" && key in current) {
+        current = (current as Record<string, unknown>)[key]
+      } else {
+        return match // Keep original if path not found
+      }
+    }
+
+    // Convert to string for interpolation
+    if (typeof current === "object") {
+      return JSON.stringify(current)
+    }
+    return String(current ?? "")
+  })
+}
+
+/**
+ * Resolves expressions in all string fields of a node's data object.
+ */
+function resolveNodeData<T extends NodeData>(
+  data: T,
+  nodeResults: Record<string, unknown>
+): T {
+  const resolved = { ...data }
+  for (const [key, value] of Object.entries(resolved)) {
+    if (typeof value === "string") {
+      (resolved as Record<string, unknown>)[key] = resolveExpressions(value, nodeResults)
+    }
+  }
+  return resolved
+}
+
+/**
  * Workflow execution engine.
  *
  * Walks the graph from a starting node (the Manuell trigger) and runs each
@@ -14,6 +67,9 @@ import type {
  * `yield`ed to the caller so the UI can update between nodes — the current
  * node can be highlighted, the Inspector can show the result, the Execute
  * button can show a spinner.
+ *
+ * Expression support: Node fields can reference previous node outputs using
+ * `{{NodeLabel.path}}` syntax, e.g., `{{Request.body.userId}}`.
  *
  * Output flow: the trigger produces a small envelope (`{ type, startedAt,
  * input }`) that becomes the `input` argument for the next node. Each
@@ -32,11 +88,15 @@ export type ExecutionStep =
   | { type: "success"; nodeId: string; result: unknown }
   | { type: "error"; nodeId: string; error: string }
 
-type NodeExecutor = (node: Node, input: unknown) => Promise<unknown>
+type NodeExecutor = (
+  node: Node,
+  input: unknown,
+  nodeResults: Record<string, unknown>
+) => Promise<unknown>
 
 const executors: Record<string, NodeExecutor> = {
-  trigger: async (node, input) => {
-    const data = node.data as TriggerNodeData
+  trigger: async (node, input, nodeResults) => {
+    const data = resolveNodeData(node.data as TriggerNodeData, nodeResults)
 
     // Parse input data from the trigger configuration
     let triggerInput: unknown = input
@@ -78,8 +138,8 @@ const executors: Record<string, NodeExecutor> = {
       input: triggerInput,
     }
   },
-  request: async (node, input) => {
-    const data = node.data as RequestNodeData
+  request: async (node, input, nodeResults) => {
+    const data = resolveNodeData(node.data as RequestNodeData, nodeResults)
     let url = data.url?.trim()
     if (!url) {
       throw new Error("No URL configured for this request node")
@@ -264,6 +324,8 @@ export async function* executeWorkflow(
   startId: string
 ): AsyncGenerator<ExecutionStep> {
   const visited = new Set<string>()
+  // Track results by node label for expression resolution
+  const nodeResults: Record<string, unknown> = {}
   // BFS queue: each entry knows the input it should pass to its node.
   const queue: { nodeId: string; input: unknown }[] = [
     { nodeId: startId, input: null },
@@ -284,8 +346,12 @@ export async function* executeWorkflow(
       if (!executor) {
         throw new Error(`No executor registered for node type "${node.type}"`)
       }
-      const result = await executor(node, input)
+      const result = await executor(node, input, nodeResults)
       yield { type: "success", nodeId, result }
+
+      // Store result by node label for expression resolution
+      const label = (node.data as NodeData).label || nodeId
+      nodeResults[label] = result
 
       // Queue downstream nodes in the order the edges were authored, so
       // the user sees a predictable top-to-bottom execution flow.

@@ -890,6 +890,37 @@ export function Canvas() {
             : null
         }
         data={inspectorNode?.data ?? {}}
+        // Only show results from upstream nodes (nodes that can flow into this one).
+        // Traverse backwards through edges to find all ancestors.
+        allNodeResults={(() => {
+          if (!inspectorNode) return undefined
+
+          // Find all upstream node IDs by traversing backwards
+          const upstreamIds = new Set<string>()
+          const queue = [inspectorNode.id]
+          while (queue.length > 0) {
+            const currentId = queue.shift()!
+            const incomingEdges = edges.filter((e) => e.target === currentId)
+            for (const edge of incomingEdges) {
+              if (!upstreamIds.has(edge.source)) {
+                upstreamIds.add(edge.source)
+                queue.push(edge.source)
+              }
+            }
+          }
+
+          // Build results from upstream nodes only
+          const results: Record<string, unknown> = {}
+          for (const node of nodes) {
+            if (!upstreamIds.has(node.id)) continue
+            const result = execution.results[node.id]
+            if (result !== undefined) {
+              const label = node.data.label || node.id
+              results[label] = result
+            }
+          }
+          return Object.keys(results).length > 0 ? results : undefined
+        })()}
         // Execution log for the currently selected node — the Inspector
         // shows the last result (or error) below the form so the user
         // can see what each step produced.

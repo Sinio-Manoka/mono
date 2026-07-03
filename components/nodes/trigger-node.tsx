@@ -20,12 +20,9 @@ export function TriggerNode(
     <div
       className={cn(
         "grid h-10 w-10 cursor-pointer place-items-center rounded-lg border bg-card shadow-sm transition-shadow",
-        // Selection ring (when idle and selected).
         selected && executionStatus === "idle"
           ? "border-ring shadow-md ring-2 ring-ring/30"
           : "border-border",
-        // Execution rings override the selection ring so the user can see
-        // which node ran / is running / failed at a glance.
         executionStatus === "running" &&
           "border-blue-500 ring-2 ring-blue-500/50 animate-pulse",
         executionStatus === "success" &&
@@ -34,7 +31,6 @@ export function TriggerNode(
           "border-red-500 ring-2 ring-red-500/40"
       )}
     >
-      {/* No target handle — triggers are entry points; nothing can connect INTO a trigger. */}
       <IconBolt
         className="size-4 text-amber-500 dark:text-amber-400"
         aria-label="Trigger node"
