@@ -35,6 +35,7 @@ import type { NodeExecutionStatus } from "@/lib/execution-status"
 import { Inspector } from "@/components/inspector"
 import { Sidebar } from "@/components/sidebar"
 import type { HistoryEntry } from "@/components/history-panel"
+import { useKeyboardShortcuts } from "@/lib/use-keyboard-shortcuts"
 
 // Wrap each node component so it receives an `onUpdate` callback bound
 // to its own id AND its current execution status. The wrapper takes
@@ -169,11 +170,16 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
   // `react-hooks/refs` lint rule.
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("")
 
-  // Undo history: stores previous states of the canvas for Ctrl+Z
-  // Only tracks major changes (node/edge additions/removals)
+  // Undo / redo history. `history` is the forward stack up to
+  // `historyIndex`; anything past that index lives in `redoStack` so
+  // Ctrl+Z walks backward through history and Ctrl+Shift+Z walks
+  // forward through redoStack. Making a new edit truncates the redo
+  // stack (you can't redo into a branched timeline).
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([])
   const isUndoingRef = useRef(false)
+  const isRedoingRef = useRef(false)
   const lastSnapshotRef = useRef<{
     nodeCount: number
     edgeCount: number
@@ -241,8 +247,15 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
   const DATA_CHANGE_DEBOUNCE_MS = 800
 
   useEffect(() => {
+    // Skip both undo AND redo: applying a history entry would otherwise
+    // look like a fresh edit (different content from `lastSnapshotRef`)
+    // and re-record itself, polluting the stacks.
     if (isUndoingRef.current) {
       isUndoingRef.current = false
+      return
+    }
+    if (isRedoingRef.current) {
+      isRedoingRef.current = false
       return
     }
 
@@ -317,11 +330,16 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
         description: desc,
       }
       setHistory((prevHistory) => {
+        // Truncate the future on a new branch — anything past the
+        // current point is no longer reachable via redo.
         const newHistory = prevHistory.slice(0, historyIndex + 1)
         newHistory.push(newEntry)
         if (newHistory.length > 20) newHistory.shift()
         return newHistory
       })
+      // Any redoable entries become unreachable — drop them so Ctrl+Shift+Z
+      // doesn't rewind into a branched timeline.
+      setRedoStack([])
       setHistoryIndex((prevIdx) => Math.min(prevIdx + 1, 19))
     }
 
@@ -386,124 +404,212 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
     }
   }, [nodes, edges, workflowId])
 
-  // Keyboard shortcuts: Ctrl+S to save, Ctrl+Z to undo, Ctrl+C/V for copy/paste
+  // Apply one entry from the chosen stack. The current snapshot (the
+  // one we're about to leave) is pushed onto the *opposite* stack so
+  // undo and redo are exactly inverse. Setting `isUndoingRef` /
+  // `isRedoingRef` short-circuits the history-tracking effect so the
+  // re-applied state isn't recorded as a fresh edit.
+  const applyFromStack = useCallback(
+    (stack: "undo" | "redo") => {
+      if (stack === "undo") {
+        if (historyIndex <= 0) return
+        const current = history[historyIndex]
+        const target = history[historyIndex - 1]
+        if (!target) return
+        isUndoingRef.current = true
+        setHistoryIndex(historyIndex - 1)
+        setRedoStack((prev) =>
+          current ? [...prev, current] : prev
+        )
+        lastSnapshotRef.current = {
+          nodeCount: target.nodes.length,
+          edgeCount: target.edges.length,
+          nodeIds: target.nodes.map((n) => n.id).sort(),
+          edgeIds: target.edges.map((e) => e.id).sort(),
+          nodesJson: JSON.stringify(target.nodes),
+          edgesJson: JSON.stringify(target.edges),
+        }
+        setNodes(target.nodes)
+        setEdges(target.edges)
+      } else {
+        const target = redoStack[redoStack.length - 1]
+        if (!target) return
+        isRedoingRef.current = true
+        setRedoStack((prev) => prev.slice(0, -1))
+        // Grow history to include the new current state. We append the
+        // target itself (not `current`) — `current` is already in
+        // history at `historyIndex` so the next undo lands back there.
+        setHistory((prev) => [...prev, target])
+        setHistoryIndex(historyIndex + 1)
+        lastSnapshotRef.current = {
+          nodeCount: target.nodes.length,
+          edgeCount: target.edges.length,
+          nodeIds: target.nodes.map((n) => n.id).sort(),
+          edgeIds: target.edges.map((e) => e.id).sort(),
+          nodesJson: JSON.stringify(target.nodes),
+          edgesJson: JSON.stringify(target.edges),
+        }
+        setNodes(target.nodes)
+        setEdges(target.edges)
+      }
+    },
+    [history, historyIndex, redoStack]
+  )
+
+  const handleUndo = useCallback(() => applyFromStack("undo"), [applyFromStack])
+  const handleRedo = useCallback(() => applyFromStack("redo"), [applyFromStack])
+
+  // Auto-save: when `hasChanges` becomes true and stays true for `AUTO_SAVE_DELAY`
+  // ms, fire a save. The timer is reset every time `hasChanges` flips —
+  // so a continuous burst of typing only triggers one save once the user
+  // has paused, matching the same debounce pattern as the history tracker.
+  const AUTO_SAVE_DELAY = 2500
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if typing in input/textarea/contenteditable
-      const target = e.target as HTMLElement
+    if (!hasChanges || saveState === "saving") return
+    const id = setTimeout(() => {
+      handleSave()
+    }, AUTO_SAVE_DELAY)
+    return () => clearTimeout(id)
+  }, [hasChanges, saveState, handleSave])
+
+  // Build a single state snapshot for the keyboard handler — this is
+  // passed into the ref-stable `useKeyboardShortcuts` below so the
+  // window listener is bound exactly once for the lifetime of the
+  // component, instead of being torn down/re-added on every render.
+  // The `{ stable refs }` pattern means we capture `nodes`/`edges`/
+  // `clipboard` etc. once-per-handler rather than per-keystroke.
+  const copySelected = useCallback(() => {
+    const selectedNodes = nodes.filter((n) => n.selected)
+    if (selectedNodes.length === 0) return false
+    const selectedNodeIds = new Set(selectedNodes.map((n) => n.id))
+    const selectedEdges = edges.filter(
+      (e) => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+    )
+    setClipboard({ nodes: selectedNodes, edges: selectedEdges })
+    return true
+  }, [nodes, edges])
+
+  const paste = useCallback(() => {
+    if (!clipboard || clipboard.nodes.length === 0) return
+    const timestamp = Date.now().toString(36)
+    const idMap = new Map<string, string>()
+
+    // Create new nodes with new IDs and offset positions
+    const newNodes: Node<NodeData>[] = clipboard.nodes.map((node, index) => {
+      const newId = `${node.type}-${timestamp}-${index}`
+      idMap.set(node.id, newId)
+
+      // Find the base label (strip existing copy suffix)
+      const baseLabel = (node.data.label ?? "Node").replace(
+        / \(copy(?: \d+)?\)$/,
+        ""
+      )
+
+      // Find highest existing copy number for this base label
+      const copyPattern = new RegExp(
+        `^${baseLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(copy(?: (\\d+))?\\)$`
+      )
+      let maxCopyNum = 0
+      for (const n of nodes) {
+        const match = (n.data.label ?? "").match(copyPattern)
+        if (match) {
+          maxCopyNum = Math.max(maxCopyNum, match[1] ? parseInt(match[1], 10) : 1)
+        }
+      }
+      const nextCopyNum = maxCopyNum + 1
+      const newLabel =
+        nextCopyNum === 1
+          ? `${baseLabel} (copy)`
+          : `${baseLabel} (copy ${nextCopyNum})`
+
+      return {
+        ...node,
+        id: newId,
+        position: {
+          x: node.position.x + 50,
+          y: node.position.y + 50,
+        },
+        selected: true,
+        data: {
+          ...node.data,
+          label: newLabel,
+        },
+      }
+    })
+
+    // Create new edges with updated source/target IDs
+    const newEdges: Edge[] = clipboard.edges.map((edge, index) => ({
+      ...edge,
+      id: `e-${timestamp}-${index}`,
+      source: idMap.get(edge.source) || edge.source,
+      target: idMap.get(edge.target) || edge.target,
+    }))
+
+    // Deselect existing nodes and add new ones
+    setNodes((nds) => [
+      ...nds.map((n) => ({ ...n, selected: false })),
+      ...newNodes,
+    ])
+    setEdges((eds) => [...eds, ...newEdges])
+  }, [clipboard, nodes])
+
+  // Keyboard shortcuts: bound ONCE for the lifetime of the page; the
+  // closure inside `useKeyboardShortcuts` reads `nodes` / `edges` etc.
+  // through refs so each keystroke gets fresh values without rebinding.
+  useKeyboardShortcuts(
+    (e, state) => {
+      // Skip while typing in an input/textarea/contenteditable.
+      const target = e.target as HTMLElement | null
       if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
       ) {
         return
       }
 
-      // Ctrl+S or Cmd+S to save
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault()
-        if (hasChanges && saveState !== "saving") {
-          handleSave()
+      const mod = e.ctrlKey || e.metaKey
+      if (!mod) return
+
+      if (e.key === "s") {
+        // Manual save — auto-save is handled elsewhere, this just
+        // gives the user a "force now" path.
+        if (state.hasChanges && state.saveState !== "saving") {
+          state.handleSave()
         }
+        return true
       }
 
-      // Ctrl+Z or Cmd+Z to undo
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-        e.preventDefault()
-        if (historyIndex > 0) {
-          const newIndex = historyIndex - 1
-          const prevState = history[newIndex]
-          if (prevState) {
-            isUndoingRef.current = true
-            setHistoryIndex(newIndex)
-            setNodes(prevState.nodes)
-            setEdges(prevState.edges)
-          }
-        }
+      if (e.key === "z" && !e.shiftKey) {
+        state.handleUndo()
+        return true
       }
 
-      // Ctrl+C or Cmd+C to copy selected nodes
-      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        const selectedNodes = nodes.filter((n) => n.selected)
-        if (selectedNodes.length > 0) {
-          e.preventDefault()
-          const selectedNodeIds = new Set(selectedNodes.map((n) => n.id))
-          // Copy edges that connect selected nodes
-          const selectedEdges = edges.filter(
-            (edge) => selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
-          )
-          setClipboard({ nodes: selectedNodes, edges: selectedEdges })
-        }
+      if ((e.key === "z" && e.shiftKey) || (e.key === "y" && mod)) {
+        state.handleRedo()
+        return true
       }
 
-      // Ctrl+V or Cmd+V to paste
-      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
-        if (clipboard && clipboard.nodes.length > 0) {
-          e.preventDefault()
-          const timestamp = Date.now().toString(36)
-          const idMap = new Map<string, string>()
-
-          // Create new nodes with new IDs and offset positions
-          const newNodes: Node<NodeData>[] = clipboard.nodes.map((node, index) => {
-            const newId = `${node.type}-${timestamp}-${index}`
-            idMap.set(node.id, newId)
-
-            // Find the base label (strip existing copy suffix)
-            const baseLabel = (node.data.label ?? "Node").replace(/ \(copy(?: \d+)?\)$/, "")
-
-            // Find highest existing copy number for this base label
-            const copyPattern = new RegExp(
-              `^${baseLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(copy(?: (\\d+))?\\)$`
-            )
-            let maxCopyNum = 0
-            for (const n of nodes) {
-              const match = (n.data.label ?? "").match(copyPattern)
-              if (match) {
-                maxCopyNum = Math.max(maxCopyNum, match[1] ? parseInt(match[1], 10) : 1)
-              }
-            }
-            const nextCopyNum = maxCopyNum + 1
-            const newLabel =
-              nextCopyNum === 1
-                ? `${baseLabel} (copy)`
-                : `${baseLabel} (copy ${nextCopyNum})`
-
-            return {
-              ...node,
-              id: newId,
-              position: {
-                x: node.position.x + 50,
-                y: node.position.y + 50,
-              },
-              selected: true,
-              data: {
-                ...node.data,
-                label: newLabel,
-              },
-            }
-          })
-
-          // Create new edges with updated source/target IDs
-          const newEdges: Edge[] = clipboard.edges.map((edge, index) => ({
-            ...edge,
-            id: `e-${timestamp}-${index}`,
-            source: idMap.get(edge.source) || edge.source,
-            target: idMap.get(edge.target) || edge.target,
-          }))
-
-          // Deselect existing nodes and add new ones
-          setNodes((nds) => [
-            ...nds.map((n) => ({ ...n, selected: false })),
-            ...newNodes,
-          ])
-          setEdges((eds) => [...eds, ...newEdges])
-        }
+      if (e.key === "c" && state.copySelected()) {
+        return true
       }
+
+      if (e.key === "v") {
+        state.paste()
+        return true
+      }
+    },
+    {
+      hasChanges,
+      saveState,
+      handleSave,
+      handleUndo,
+      handleRedo,
+      copySelected,
+      paste,
     }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [hasChanges, saveState, handleSave, history, historyIndex, nodes, edges, clipboard])
+  )
 
   const inspectorNode = useMemo(
     () => nodes.find((n) => n.id === inspectorNodeId) ?? null,
