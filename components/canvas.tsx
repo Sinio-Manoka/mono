@@ -139,7 +139,15 @@ const reactFlowThemeStyle = {
   "--xy-node-boxshadow-selected": "0 0 0 2px var(--ring)",
 } as React.CSSProperties
 
-export function Canvas() {
+type CanvasProps = {
+  /** Workflow id pulled from the route (`/[id]/workflow`). Currently
+   *  informational — the storage layer is still the single shared
+   *  `data/workflow.json` — but plumbed through so the API calls can
+   *  be split per-workflow without re-wiring the page. */
+  workflowId?: string
+}
+
+export function Canvas({ workflowId }: CanvasProps = {}) {
   const [nodes, setNodes] = useState<Node<NodeData>[]>(initialNodes)
   const [edges, setEdges] = useState<Edge[]>(initialEdges)
   // The inspector is driven by a dedicated id, not by React Flow's built-in
@@ -195,7 +203,7 @@ export function Canvas() {
   // will report dirty so they can save it for the first time.
   useEffect(() => {
     let cancelled = false
-    fetch("/api/workflow")
+    fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
         if (cancelled || !data) return
@@ -218,7 +226,7 @@ export function Canvas() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [workflowId])
 
   // Track changes to history so Ctrl+Z can step backwards one user action
   // at a time. Two kinds of changes are recorded as separate entries:
@@ -359,7 +367,7 @@ export function Canvas() {
     setSaveState("saving")
     try {
       const snapshot = { nodes, edges }
-      const res = await fetch("/api/workflow", {
+      const res = await fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(snapshot),
@@ -376,7 +384,7 @@ export function Canvas() {
       console.error("[save] workflow", err)
       setSaveState("idle")
     }
-  }, [nodes, edges])
+  }, [nodes, edges, workflowId])
 
   // Keyboard shortcuts: Ctrl+S to save, Ctrl+Z to undo, Ctrl+C/V for copy/paste
   useEffect(() => {
