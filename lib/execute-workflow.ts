@@ -45,47 +45,103 @@ const executors: Record<string, NodeExecutor> = {
   },
   request: async (node, input) => {
     const data = node.data as RequestNodeData
-    const url = data.url?.trim()
+    let url = data.url?.trim()
     if (!url) {
       throw new Error("No URL configured for this request node")
     }
+
     const method = (data.method ?? "GET").toUpperCase()
+
+    // Parse and append query parameters to URL
+    if (data.queryParams?.trim()) {
+      try {
+        const params = JSON.parse(data.queryParams)
+        const searchParams = new URLSearchParams()
+        for (const [key, value] of Object.entries(params)) {
+          searchParams.append(key, String(value))
+        }
+        const separator = url.includes("?") ? "&" : "?"
+        url = `${url}${separator}${searchParams.toString()}`
+      } catch (err) {
+        throw new Error(`Invalid query parameters JSON: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // Parse headers
+    let headers: Record<string, string> = {}
+    if (data.headers?.trim()) {
+      try {
+        headers = JSON.parse(data.headers)
+      } catch (err) {
+        throw new Error(`Invalid headers JSON: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // Add Bearer token if provided
+    if (data.authToken?.trim()) {
+      headers["Authorization"] = `Bearer ${data.authToken.trim()}`
+    }
+
+    // Parse body
+    let body: string | undefined
+    if (data.body?.trim()) {
+      try {
+        // If it's JSON, validate it; otherwise send as-is
+        JSON.parse(data.body)
+        body = data.body
+      } catch {
+        // Not JSON, send as plain text
+        body = data.body
+      }
+    }
+
     let response: Response
     try {
-      response = await fetch(url, {
+      const fetchOptions: RequestInit = {
         method,
-        // Don't send the previous node's raw `input` as the body by
-        // default — callers can opt in later. For now, just hit the URL.
-      })
+        headers,
+      }
+      if (body) {
+        fetchOptions.body = body
+      }
+      response = await fetch(url, fetchOptions)
     } catch (err) {
-      // The browser throws `TypeError` for the most common fetch failure
-      // modes (CORS preflight denied, DNS failure, offline, mixed-content
-      // block, invalid URL). Surface a single, readable message that names
-      // the likely causes instead of leaking the raw `TypeError` text.
       const raw = err instanceof Error ? err.message : String(err)
-      const isLikelyCors =
-        raw.toLowerCase().includes("failed to fetch") ||
-        raw.toLowerCase().includes("networkerror") ||
-        raw.toLowerCase().includes("network error")
-      if (isLikelyCors) {
+
+      // Provide helpful error messages
+      if (raw.toLowerCase().includes("failed to fetch") ||
+          raw.toLowerCase().includes("networkerror") ||
+          raw.toLowerCase().includes("network error")) {
         throw new Error(
-          `Could not reach ${url}. This is usually one of:\n` +
-            `  • CORS — the target server didn't allow this origin\n` +
-            `  • Offline / DNS / unreachable host\n` +
-            `  • Mixed-content (http:// from an https:// page)\n` +
-            `  • Invalid URL`
+          `Could not reach ${url}\n\nCommon causes:\n` +
+          `• Invalid URL format\n` +
+          `• Server is offline or unreachable\n` +
+          `• Network connectivity issue\n` +
+          `• DNS resolution failed\n\n` +
+          `Tip: Try a public API like:\n` +
+          `https://jsonplaceholder.typicode.com/posts`
         )
       }
+
+      if (raw.toLowerCase().includes("cors")) {
+        throw new Error(
+          `CORS Error: Server blocked this request.\n\n` +
+          `The server doesn't allow requests from this origin.\n` +
+          `Try using a public CORS-enabled API instead.`
+        )
+      }
+
       throw new Error(`Request failed: ${raw}`)
     }
-    const body = await response.text()
-    let parsed: unknown = body
+
+    const responseBody = await response.text()
+    let parsed: unknown = responseBody
     try {
-      parsed = body ? JSON.parse(body) : body
+      parsed = responseBody ? JSON.parse(responseBody) : responseBody
     } catch {
-      // Body wasn't JSON — keep the raw text under `bodyRaw`.
-      parsed = { bodyRaw: body }
+      parsed = { bodyRaw: responseBody }
     }
+
     return {
       status: response.status,
       statusText: response.statusText,

@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/drawer"
 import { cn } from "@/lib/utils"
 import { NodeLabel } from "@/components/nodes/node-label"
+import { KeyValueEditor } from "@/components/key-value-editor"
+import { JsonViewer } from "@/components/json-viewer"
 import type {
   NodeData,
   NodeType,
@@ -122,16 +124,8 @@ export function Inspector({
     >
       <DrawerContent
         className={cn(
-          // Full-bleed sheet: drop the shadcn default's `p-4` padding, the
-          // `before:rounded-4xl` rounded card, the `before:inset-2` 8px
-          // gutter, the `before:border` outline, and the `before:shadow-xl`
-          // drop shadow. The drawer now spans the viewport edge-to-edge with
-          // sharp corners and no internal padding.
           "p-0 before:rounded-none before:inset-0 before:border-0 before:shadow-none",
-          // The shadcn DrawerContent caps the bottom drawer at 80vh. Bump
-          // that to 90vh via `!` so the form + log + header all fit
-          // comfortably without the drawer feeling cramped.
-          "max-h-[90vh]!"
+          "max-h-[95vh]!"
         )}
       >
         {/* Top bar — title block anchored to the drawer's top-left corner,
@@ -179,7 +173,7 @@ export function Inspector({
           </div>
         </div>
 
-        <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 px-4 pb-8 pt-20 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
+        <div className="relative mx-auto grid w-full grid-cols-1 gap-6 px-4 pb-8 pt-20 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
           {/* Left spacer — 1fr column, only rendered on lg so the form
               is centered. On mobile the form spans the full column. */}
           <div className="hidden lg:block" aria-hidden />
@@ -188,7 +182,7 @@ export function Inspector({
               sizes to the form's content (max-w-sm on mobile, w-80 on
               lg), and the equal 1fr columns on either side push it to
               the page center. */}
-          <div className="mx-auto w-full max-w-sm lg:w-80">
+          <div className="mx-auto w-full max-w-2xl overflow-y-auto lg:w-96">
             {nodeType === "request" ? (
               <div className="flex flex-col gap-4">
                 <SelectField
@@ -206,6 +200,31 @@ export function Inspector({
                   label="URL"
                   value={(localData as RequestNodeData).url ?? ""}
                   onChange={(value) => apply({ url: value })}
+                  placeholder="https://api.example.com"
+                />
+                <KeyValueEditor
+                  label="Query Parameters"
+                  description="Add key-value pairs for query parameters"
+                  value={(localData as RequestNodeData).queryParams ?? ""}
+                  onChange={(value) => apply({ queryParams: value })}
+                />
+                <KeyValueEditor
+                  label="Headers"
+                  description="Configure custom headers for the request"
+                  value={(localData as RequestNodeData).headers ?? ""}
+                  onChange={(value) => apply({ headers: value })}
+                />
+                <Field
+                  label="Bearer Token"
+                  value={(localData as RequestNodeData).authToken ?? ""}
+                  onChange={(value) => apply({ authToken: value })}
+                  placeholder="your-token-here"
+                />
+                <Field
+                  label="Body"
+                  value={(localData as RequestNodeData).body ?? ""}
+                  onChange={(value) => apply({ body: value })}
+                  placeholder='{"key": "value"}'
                 />
               </div>
             ) : (
@@ -220,55 +239,27 @@ export function Inspector({
               space from the right of the form to the drawer's right
               edge. `min-w-0` lets the inner <pre> shrink and wrap long
               lines instead of forcing the grid track to grow. */}
-          <div className="flex w-full min-w-0 flex-col gap-2">
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-2 max-h-96 overflow-hidden">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Log
               </h3>
-              {hasLogContent ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Copy log to clipboard"
-                    onClick={handleCopyLog}
-                  >
-                    {copied ? (
-                      <IconCheck className="size-4" />
-                    ) : (
-                      <IconCopy className="size-4" />
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Expand log in popup"
-                    onClick={() => setLogExpanded(true)}
-                  >
-                    <IconArrowsMaximize className="size-4" />
-                  </Button>
-                </div>
-              ) : null}
             </div>
 
             {isRunning ? (
-              <ExecutionLog
-                title="Running…"
-                tone="info"
-                body="This node is currently being executed."
-              />
+              <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-blue-500/40 bg-blue-500/5 px-3 py-6 text-center text-xs text-blue-700 dark:text-blue-300 overflow-y-auto">
+                <span>This node is currently being executed...</span>
+              </div>
             ) : nodeError ? (
-              <ExecutionLog title="Error" tone="error" body={nodeError} />
+              <div className="flex-1 rounded-md overflow-y-auto">
+                <JsonViewer data={nodeError} title="Error" />
+              </div>
             ) : nodeResult !== undefined ? (
-              <ExecutionLog
-                title="Last result"
-                tone="success"
-                body={nodeResult}
-              />
+              <div className="flex-1 rounded-md overflow-y-auto">
+                <JsonViewer data={nodeResult} title="Result" />
+              </div>
             ) : (
-              <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground">
+              <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground overflow-y-auto">
                 No execution log yet. Click{" "}
                 <span className="font-medium">Execute Workflow</span> to
                 run this node.
@@ -281,7 +272,7 @@ export function Inspector({
             header. Renders the entire text body (no truncation) in a
             monospace <pre> that scrolls inside the dialog. */}
         <Dialog open={logExpanded} onOpenChange={setLogExpanded}>
-          <DialogContent className="flex max-h-[80vh] max-w-3xl flex-col">
+          <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col">
             <DialogHeader>
               <DialogTitle>Full log</DialogTitle>
               <DialogDescription>
@@ -292,7 +283,7 @@ export function Inspector({
                   : "No log content"}
               </DialogDescription>
             </DialogHeader>
-            <pre className="mt-2 min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+            <pre className="mt-2 min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-4 font-mono text-sm leading-relaxed">
               {logBody}
             </pre>
           </DialogContent>
@@ -306,10 +297,12 @@ function Field({
   label,
   value,
   onChange,
+  placeholder,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
+  placeholder?: string
 }) {
   return (
     <label className="flex flex-col gap-1.5">
@@ -320,6 +313,7 @@ function Field({
         onChange={(event: ChangeEvent<HTMLInputElement>) =>
           onChange(event.target.value)
         }
+        placeholder={placeholder}
         className={cn(
           "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
           "text-foreground placeholder:text-muted-foreground",
@@ -364,50 +358,6 @@ function SelectField({
   )
 }
 
-function ExecutionLog({
-  title,
-  tone,
-  body,
-}: {
-  title: string
-  tone: "info" | "success" | "error"
-  body: unknown
-}) {
-  const toneClasses: Record<typeof tone, string> = {
-    info: "border-blue-500/40 bg-blue-500/5 text-blue-700 dark:text-blue-300",
-    success:
-      "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
-    error: "border-red-500/40 bg-red-500/5 text-red-700 dark:text-red-300",
-  }
-  const text =
-    typeof body === "string" ? body : JSON.stringify(body, null, 2)
-  // Long logs get a soft cap (max-h-72 = 18rem) with internal scrolling
-  // and a trailing "…" so the user can tell there's more below the fold
-  // without us truncating the content. The full body is always available
-  // via the header's Expand button.
-  const PREVIEW_LINES = 20
-  const lines = text.split("\n")
-  const isLong = lines.length > PREVIEW_LINES
-  const preview = isLong
-    ? lines.slice(0, PREVIEW_LINES).join("\n") + "\n…"
-    : text
 
-  return (
-    <div
-      className={cn(
-        "rounded-md border px-3 py-2 text-xs",
-        toneClasses[tone]
-      )}
-    >
-      <div className="font-medium">{title}</div>
-      <pre
-        className={cn(
-          "mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-all",
-          "rounded-sm bg-background/40 p-2 font-mono text-[11px] leading-relaxed"
-        )}
-      >
-        {preview}
-      </pre>
-    </div>
-  )
-}
+
+

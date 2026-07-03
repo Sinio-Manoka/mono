@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
+import { IconPencil } from "@tabler/icons-react"
 
 import { cn } from "@/lib/utils"
 
@@ -95,11 +96,12 @@ export function NodeLabel({
       onDoubleClick={(event) => event.stopPropagation()}
       // `min-w-0` so the text div can shrink in the flex row.
       className={cn(
-        "min-w-0 flex-1 cursor-text text-sm font-medium truncate",
+        "flex min-w-0 flex-1 cursor-text items-center gap-1.5 text-sm font-medium",
         className
       )}
     >
-      {value || "Untitled"}
+      <span className="truncate">{value || "Untitled"}</span>
+      <IconPencil className="size-4 flex-shrink-0 text-muted-foreground" />
     </div>
   )
 }

@@ -18,6 +18,14 @@ export type RequestNodeData = {
   method?: string
   /** Target URL. */
   url?: string
+  /** Query parameters as JSON object. */
+  queryParams?: string
+  /** Request headers as JSON object. */
+  headers?: string
+  /** Request body/payload (for POST/PUT/PATCH). */
+  body?: string
+  /** Authorization header (Bearer token). */
+  authToken?: string
 }
 
 export type NodeData = TriggerNodeData | RequestNodeData
@@ -112,13 +120,41 @@ export const NODE_CATALOG: NodeDefinition[] = [
           { value: "PUT", label: "PUT" },
           { value: "DELETE", label: "DELETE" },
           { value: "PATCH", label: "PATCH" },
+          { value: "HEAD", label: "HEAD" },
+          { value: "OPTIONS", label: "OPTIONS" },
         ],
       },
       {
         key: "url",
         label: "URL",
         type: "text",
-        placeholder: "https://api.example.com",
+        placeholder: "https://jsonplaceholder.typicode.com/posts",
+        defaultValue: "https://jsonplaceholder.typicode.com/posts",
+      },
+      {
+        key: "queryParams",
+        label: "Query Parameters (JSON)",
+        type: "text",
+        placeholder: '{"key": "value"}',
+      },
+      {
+        key: "headers",
+        label: "Headers (JSON)",
+        type: "text",
+        placeholder: '{"Content-Type": "application/json"}',
+        defaultValue: '{"Content-Type": "application/json"}',
+      },
+      {
+        key: "authToken",
+        label: "Bearer Token",
+        type: "text",
+        placeholder: "your-token-here",
+      },
+      {
+        key: "body",
+        label: "Body (JSON)",
+        type: "text",
+        placeholder: '{"title": "Test", "userId": 1}',
       },
     ],
   },

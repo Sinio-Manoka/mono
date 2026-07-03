@@ -32,7 +32,6 @@ import {
   type TriggerNodeData,
 } from "@/components/nodes/types"
 import type { NodeExecutionStatus } from "@/lib/execution-status"
-import { executeWorkflow } from "@/lib/execute-workflow"
 import { Inspector } from "@/components/inspector"
 import { Sidebar } from "@/components/sidebar"
 
@@ -84,7 +83,8 @@ const initialNodes: Node<NodeData>[] = [
     data: {
       label: "HTTP Request",
       method: "GET",
-      url: "https://api.example.com",
+      url: "https://jsonplaceholder.typicode.com/posts",
+      headers: '{"Content-Type": "application/json"}',
     },
   },
 ]
@@ -302,30 +302,60 @@ export function Canvas() {
     })
 
     try {
-      for await (const step of executeWorkflow(
-        nodes,
-        edges,
-        trigger.id
-      )) {
-        setExecution((prev) => {
-          if (step.type === "start") {
-            return { ...prev, currentNodeId: step.nodeId }
-          }
-          if (step.type === "success") {
+      const response = await fetch("/api/execute-workflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodes,
+          edges,
+          startId: trigger.id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Execution failed: ${response.status}`)
+      }
+
+      // Read the streaming NDJSON response
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error("No response body")
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || "" // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const step = JSON.parse(line)
+
+          setExecution((prev) => {
+            if (step.type === "start") {
+              return { ...prev, currentNodeId: step.nodeId }
+            }
+            if (step.type === "success") {
+              return {
+                ...prev,
+                currentNodeId: null,
+                results: { ...prev.results, [step.nodeId]: step.result },
+              }
+            }
             return {
               ...prev,
               currentNodeId: null,
-              results: { ...prev.results, [step.nodeId]: step.result },
+              errors: { ...prev.errors, [step.nodeId]: step.error },
             }
-          }
-          // error — clear the running marker and record the message.
-          return {
-            ...prev,
-            currentNodeId: null,
-            errors: { ...prev.errors, [step.nodeId]: step.error },
-          }
-        })
+          })
+        }
       }
+    } catch (err) {
+      console.error("[execute] workflow failed", err)
     } finally {
       setExecution((prev) => ({
         ...prev,
@@ -552,15 +582,15 @@ export function Canvas() {
             type="button"
             onClick={handleExecuteWorkflow}
             disabled={execution.running}
-            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 gap-2 shadow-lg disabled:opacity-70"
-            size="default"
+            className="absolute top-4 left-1/2 z-10 -translate-x-1/2 gap-2 rounded-full bg-gradient-to-r from-primary to-primary/80 px-8 py-3 font-semibold tracking-tight text-primary-foreground shadow-xl transition-all hover:shadow-2xl hover:scale-105 disabled:opacity-60 disabled:scale-100"
+            size="lg"
           >
             {execution.running ? (
-              <IconLoader2 className="size-4 animate-spin" stroke={2.5} aria-hidden />
+              <IconLoader2 className="size-5 animate-spin" stroke={2} aria-hidden />
             ) : (
-              <IconPlayerPlay className="size-4" stroke={2.5} aria-hidden />
+              <IconPlayerPlay className="size-5 fill-current" stroke={1.5} aria-hidden />
             )}
-            {execution.running ? "Running…" : "Execute Workflow"}
+            {execution.running ? "Running…" : "Execute"}
           </Button>
         ) : null}
       </div>
