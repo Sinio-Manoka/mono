@@ -3,8 +3,6 @@
 import { useState, type ChangeEvent } from "react"
 import {
   IconArrowsMaximize,
-  IconCheck,
-  IconCopy,
   IconTrash,
   IconX,
 } from "@tabler/icons-react"
@@ -99,20 +97,6 @@ export function Inspector({
       ? nodeResult
       : JSON.stringify(nodeResult, null, 2)
     : null
-  const hasLogContent = logBody !== null
-
-  // Tiny "copied!" feedback state for the clipboard button.
-  const [copied, setCopied] = useState(false)
-  const handleCopyLog = async () => {
-    if (!logBody) return
-    try {
-      await navigator.clipboard.writeText(logBody)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch (err) {
-      console.error("[inspector] clipboard write failed", err)
-    }
-  }
 
   // State for the "Expand" popup that shows the full log without any
   // truncation. The header's expand button toggles this.
@@ -238,7 +222,7 @@ export function Inspector({
               space from the right of the form to the drawer's right
               edge. `min-w-0` lets the inner <pre> shrink and wrap long
               lines instead of forcing the grid track to grow. */}
-          <div className="flex w-full min-w-0 flex-1 flex-col gap-2 max-h-96 overflow-hidden">
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-2 h-[400px] overflow-hidden">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Log

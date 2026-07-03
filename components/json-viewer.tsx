@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { IconChevronRight, IconX, IconArrowsMaximize } from "@tabler/icons-react"
+import { IconChevronRight, IconX, IconArrowsMaximize, IconCopy, IconCheck } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,6 +23,18 @@ export function JsonViewer({ data, title }: JsonViewerProps) {
   const [showSearch, setShowSearch] = useState(false)
   const [expanded, setExpanded] = useState<ExpandedState>(new Set(["root"]))
   const [isExpandedView, setIsExpandedView] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      const text = typeof data === "string" ? data : JSON.stringify(data, null, 2)
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error("Failed to copy", err)
+    }
+  }
 
   // Ctrl+F / Cmd+F to toggle search
   useEffect(() => {
@@ -283,15 +295,26 @@ export function JsonViewer({ data, title }: JsonViewerProps) {
       {!showSearch && (
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/20 text-xs text-muted-foreground">
           <span>Press <kbd className="px-1.5 py-0.5 bg-background border border-border rounded text-xs">Ctrl+F</kbd> to search</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setIsExpandedView(true)}
-            className="h-7 w-7 p-0"
-            title="Expand"
-          >
-            <IconArrowsMaximize className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleCopy}
+              className="h-7 w-7 p-0"
+              title="Copy"
+            >
+              {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsExpandedView(true)}
+              className="h-7 w-7 p-0"
+              title="Expand"
+            >
+              <IconArrowsMaximize className="size-4" />
+            </Button>
+          </div>
         </div>
       )}
 
@@ -331,6 +354,16 @@ export function JsonViewer({ data, title }: JsonViewerProps) {
               Collapse
             </Button>
           </div>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleCopy}
+            className="h-7 w-7 p-0"
+            title="Copy"
+          >
+            {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+          </Button>
 
           <Button
             size="sm"

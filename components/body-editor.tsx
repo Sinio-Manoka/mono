@@ -104,7 +104,7 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden px-6 py-4 gap-4" style={{ backgroundColor: "#171B1F" }}>
+        <div className="flex-1 flex flex-col overflow-hidden px-6 py-4 gap-4 min-h-[300px]" style={{ backgroundColor: "#171B1F" }}>
           {/* Body Type Selection */}
           <div className="flex-shrink-0">
             <p className="text-xs font-semibold text-muted-foreground mb-2">Type</p>

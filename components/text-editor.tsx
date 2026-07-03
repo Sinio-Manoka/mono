@@ -77,7 +77,7 @@ export function TextEditor({
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden px-6 py-4 gap-4" style={{ backgroundColor: "#171B1F" }}>
+        <div className="flex-1 flex flex-col overflow-hidden px-6 py-4 gap-4 min-h-[300px]" style={{ backgroundColor: "#171B1F" }}>
           <div className="flex-1 overflow-hidden rounded-lg border border-border bg-background">
             <textarea
               ref={textareaRef}
