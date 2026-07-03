@@ -166,7 +166,17 @@ export function Canvas() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const isUndoingRef = useRef(false)
-  const lastSnapshotRef = useRef<{ nodeCount: number; edgeCount: number; nodeIds: string[]; edgeIds: string[] } | null>(null)
+  const lastSnapshotRef = useRef<{
+    nodeCount: number
+    edgeCount: number
+    nodeIds: string[]
+    edgeIds: string[]
+    // Content fingerprint so the effect can tell "state unchanged"
+    // apart from "user actually edited something". Used by the
+    // data-change check below.
+    nodesJson: string
+    edgesJson: string
+  } | null>(null)
 
   // Preview state: when hovering a history entry, show that version
   const [previewEntry, setPreviewEntry] = useState<HistoryEntry | null>(null)
@@ -210,7 +220,18 @@ export function Canvas() {
     }
   }, [])
 
-  // Track only major changes (node/edge additions/removals) to history
+  // Track changes to history so Ctrl+Z can step backwards one user action
+  // at a time. Two kinds of changes are recorded as separate entries:
+  //   - Structural: node/edge IDs change (add, remove, reconnect). Recorded
+  //     immediately so the snapshot is captured the moment the action
+  //     happens.
+  //   - Data edits: same IDs, different content (URL, label, headers…).
+  //     Debounced — a burst of typing produces one entry rather than one
+  //     per keystroke. Without this, Ctrl+Z would skip past data edits
+  //     and "reset" all the way back to the previous structural change.
+  const dataChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const DATA_CHANGE_DEBOUNCE_MS = 800
+
   useEffect(() => {
     if (isUndoingRef.current) {
       isUndoingRef.current = false
@@ -223,22 +244,31 @@ export function Canvas() {
       nodeIds: nodes.map(n => n.id).sort(),
       edgeIds: edges.map(e => e.id).sort(),
     }
+    // Cheap content fingerprint so we can tell "the deps changed but
+    // the canvas state is identical" apart from "the user actually
+    // edited something". Without this, every re-run of this effect
+    // (e.g. the `historyIndex` bump right after a `recordSnapshot`)
+    // would fall into the data-change branch and schedule a fresh
+    // debounce, eventually filling the history with "Edited node"
+    // entries the user never asked for.
+    const currentNodesJson = JSON.stringify(nodes)
+    const currentEdgesJson = JSON.stringify(edges)
 
     const prev = lastSnapshotRef.current
 
     // Check if this is a major change
-    let isMajorChange = false
+    let isStructuralChange = false
     let description = "Initial state"
 
     if (!prev) {
-      isMajorChange = true
+      isStructuralChange = true
       description = "Initial state"
     } else {
       const nodeIdsChanged = JSON.stringify(currentSnapshot.nodeIds) !== JSON.stringify(prev.nodeIds)
       const edgeIdsChanged = JSON.stringify(currentSnapshot.edgeIds) !== JSON.stringify(prev.edgeIds)
 
       if (nodeIdsChanged || edgeIdsChanged) {
-        isMajorChange = true
+        isStructuralChange = true
         const nodeDiff = currentSnapshot.nodeCount - prev.nodeCount
         const edgeDiff = currentSnapshot.edgeCount - prev.edgeCount
 
@@ -256,10 +286,28 @@ export function Canvas() {
       }
     }
 
-    if (isMajorChange) {
-      lastSnapshotRef.current = currentSnapshot
-      const newEntry: HistoryEntry = { nodes, edges, timestamp: Date.now(), description }
+    // Real data change: same IDs, different content. Only meaningful
+    // when we've already recorded something — the initial mount
+    // already produced "Initial state" and re-recording the same
+    // content on the follow-up re-run would duplicate it.
+    const isDataChange =
+      !!prev &&
+      !isStructuralChange &&
+      (currentNodesJson !== prev.nodesJson ||
+        currentEdgesJson !== prev.edgesJson)
 
+    const recordSnapshot = (desc: string) => {
+      lastSnapshotRef.current = {
+        ...currentSnapshot,
+        nodesJson: currentNodesJson,
+        edgesJson: currentEdgesJson,
+      }
+      const newEntry: HistoryEntry = {
+        nodes,
+        edges,
+        timestamp: Date.now(),
+        description: desc,
+      }
       setHistory((prevHistory) => {
         const newHistory = prevHistory.slice(0, historyIndex + 1)
         newHistory.push(newEntry)
@@ -267,6 +315,35 @@ export function Canvas() {
         return newHistory
       })
       setHistoryIndex((prevIdx) => Math.min(prevIdx + 1, 19))
+    }
+
+    if (isStructuralChange) {
+      // A structural change supersedes any pending data-edit entry —
+      // there's no point recording the intermediate "edited URL of the
+      // node that's about to be deleted" state.
+      if (dataChangeTimerRef.current) {
+        clearTimeout(dataChangeTimerRef.current)
+        dataChangeTimerRef.current = null
+      }
+      recordSnapshot(description)
+      return
+    }
+
+    if (isDataChange) {
+      // Data edit: debounce so a typing burst collapses to one entry.
+      // Each effect re-run clears the previous timer in the cleanup
+      // below, so the entry is only recorded once the user has paused.
+      dataChangeTimerRef.current = setTimeout(() => {
+        recordSnapshot("Edited node")
+        dataChangeTimerRef.current = null
+      }, DATA_CHANGE_DEBOUNCE_MS)
+    }
+
+    return () => {
+      if (dataChangeTimerRef.current) {
+        clearTimeout(dataChangeTimerRef.current)
+        dataChangeTimerRef.current = null
+      }
     }
   }, [nodes, edges, historyIndex])
 
@@ -739,6 +816,11 @@ export function Canvas() {
         edgeCount: entry.edges.length,
         nodeIds: entry.nodes.map(n => n.id).sort(),
         edgeIds: entry.edges.map(e => e.id).sort(),
+        // Seed the content fingerprint so the post-restore effect run
+        // doesn't see the restored state as a "data change" relative
+        // to a stale fingerprint.
+        nodesJson: JSON.stringify(entry.nodes),
+        edgesJson: JSON.stringify(entry.edges),
       }
       setHistoryIndex(index)
       setNodes(entry.nodes)
