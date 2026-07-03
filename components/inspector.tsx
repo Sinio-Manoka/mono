@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils"
 import { NodeLabel } from "@/components/nodes/node-label"
 import { AuthEditor } from "@/components/auth-editor"
+import { BodyEditor } from "@/components/body-editor"
 import { KeyValueEditor } from "@/components/key-value-editor"
 import { TextEditor } from "@/components/text-editor"
 import { JsonViewer } from "@/components/json-viewer"
@@ -220,13 +221,9 @@ export function Inspector({
                   value={(localData as RequestNodeData).authToken ?? ""}
                   onChange={(value) => apply({ authToken: value })}
                 />
-                <TextEditor
-                  label="Body"
-                  description="Request payload (JSON or text)"
+                <BodyEditor
                   value={(localData as RequestNodeData).body ?? ""}
                   onChange={(value) => apply({ body: value })}
-                  placeholder='{"key": "value"}'
-                  rows={6}
                 />
               </div>
             ) : (

@@ -107,15 +107,61 @@ const executors: Record<string, NodeExecutor> = {
       }
     }
 
-    // Parse body
+    // Parse body based on type
     let body: string | undefined
     if (data.body?.trim()) {
       try {
-        // If it's JSON, validate it; otherwise send as-is
-        JSON.parse(data.body)
-        body = data.body
+        const bodyConfig = JSON.parse(data.body)
+
+        switch (bodyConfig.type) {
+          case "raw":
+            body = bodyConfig.raw
+            break
+
+          case "form-urlencoded":
+            if (bodyConfig.formData && Array.isArray(bodyConfig.formData)) {
+              const params = new URLSearchParams()
+              for (const { key, value } of bodyConfig.formData) {
+                params.append(key, value)
+              }
+              body = params.toString()
+              headers["Content-Type"] = "application/x-www-form-urlencoded"
+            }
+            break
+
+          case "form-data":
+            if (bodyConfig.formData && Array.isArray(bodyConfig.formData)) {
+              const params = new URLSearchParams()
+              for (const { key, value } of bodyConfig.formData) {
+                params.append(key, value)
+              }
+              body = params.toString()
+              headers["Content-Type"] = "application/x-www-form-urlencoded"
+            }
+            break
+
+          case "graphql":
+            if (bodyConfig.graphql) {
+              const gqlPayload: Record<string, unknown> = {
+                query: bodyConfig.graphql.query,
+              }
+              if (bodyConfig.graphql.variables) {
+                try {
+                  gqlPayload.variables = JSON.parse(bodyConfig.graphql.variables)
+                } catch {
+                  gqlPayload.variables = bodyConfig.graphql.variables
+                }
+              }
+              body = JSON.stringify(gqlPayload)
+              headers["Content-Type"] = "application/json"
+            }
+            break
+
+          default:
+            body = bodyConfig.raw
+        }
       } catch {
-        // Not JSON, send as plain text
+        // Fallback: treat as raw body if not valid JSON
         body = data.body
       }
     }
