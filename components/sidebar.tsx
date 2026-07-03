@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { NodeData, NodeType } from "@/components/nodes/types"
 import { CreateNodeDialog } from "@/components/create-node-dialog"
+import { HistoryPanel, type HistoryEntry } from "@/components/history-panel"
 
 type SaveState = "idle" | "saving" | "saved"
 
@@ -25,6 +26,11 @@ type SidebarProps = {
   saveState: SaveState
   hasChanges: boolean
   disabledKeys?: ReadonlySet<string>
+  history?: HistoryEntry[]
+  historyIndex?: number
+  onRestoreHistory?: (index: number) => void
+  onDeleteHistory?: (index: number) => void
+  onDownloadHistory?: (entry: HistoryEntry, index: number) => void
   className?: string
 }
 
@@ -36,6 +42,11 @@ export function Sidebar({
   saveState,
   hasChanges,
   disabledKeys,
+  history = [],
+  historyIndex = -1,
+  onRestoreHistory,
+  onDeleteHistory,
+  onDownloadHistory,
   className,
 }: SidebarProps) {
   const [open, setOpen] = useState(false)
@@ -73,6 +84,16 @@ export function Sidebar({
         onClick={onLoad}
         tone="muted"
       />
+
+      {history.length > 0 && onRestoreHistory && onDeleteHistory && onDownloadHistory && (
+        <HistoryPanel
+          history={history}
+          currentIndex={historyIndex}
+          onRestore={onRestoreHistory}
+          onDelete={onDeleteHistory}
+          onDownload={onDownloadHistory}
+        />
+      )}
 
       <CreateNodeDialog
         key={resetKey}

@@ -161,9 +161,11 @@ export function Canvas() {
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("")
 
   // Undo history: stores previous states of the canvas for Ctrl+Z
-  const [history, setHistory] = useState<{ nodes: Node<NodeData>[]; edges: Edge[] }[]>([])
-  const historyIndexRef = useRef(-1)
+  // Only tracks major changes (node/edge additions/removals)
+  const [history, setHistory] = useState<{ nodes: Node<NodeData>[]; edges: Edge[]; timestamp: number; description: string }[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
   const isUndoingRef = useRef(false)
+  const lastSnapshotRef = useRef<{ nodeCount: number; edgeCount: number; nodeIds: string[]; edgeIds: string[] } | null>(null)
 
   // On mount, load the persisted workflow from the API. If a snapshot
   // exists, replace the default `initialNodes` / `initialEdges` with it
@@ -198,21 +200,64 @@ export function Canvas() {
     }
   }, [])
 
-  // Track changes to nodes/edges and push to history for undo
+  // Track only major changes (node/edge additions/removals) to history
   useEffect(() => {
     if (isUndoingRef.current) {
       isUndoingRef.current = false
       return
     }
-    setHistory((prev) => {
-      const newHistory = prev.slice(0, historyIndexRef.current + 1)
-      newHistory.push({ nodes, edges })
-      // Keep max 50 history entries
-      if (newHistory.length > 50) newHistory.shift()
-      historyIndexRef.current = newHistory.length - 1
-      return newHistory
-    })
-  }, [nodes, edges])
+
+    const currentSnapshot = {
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      nodeIds: nodes.map(n => n.id).sort(),
+      edgeIds: edges.map(e => e.id).sort(),
+    }
+
+    const prev = lastSnapshotRef.current
+
+    // Check if this is a major change
+    let isMajorChange = false
+    let description = "Initial state"
+
+    if (!prev) {
+      isMajorChange = true
+      description = "Initial state"
+    } else {
+      const nodeIdsChanged = JSON.stringify(currentSnapshot.nodeIds) !== JSON.stringify(prev.nodeIds)
+      const edgeIdsChanged = JSON.stringify(currentSnapshot.edgeIds) !== JSON.stringify(prev.edgeIds)
+
+      if (nodeIdsChanged || edgeIdsChanged) {
+        isMajorChange = true
+        const nodeDiff = currentSnapshot.nodeCount - prev.nodeCount
+        const edgeDiff = currentSnapshot.edgeCount - prev.edgeCount
+
+        if (nodeDiff > 0) {
+          description = `Added ${nodeDiff} node${nodeDiff > 1 ? "s" : ""}`
+        } else if (nodeDiff < 0) {
+          description = `Removed ${Math.abs(nodeDiff)} node${Math.abs(nodeDiff) > 1 ? "s" : ""}`
+        } else if (edgeDiff > 0) {
+          description = `Added ${edgeDiff} connection${edgeDiff > 1 ? "s" : ""}`
+        } else if (edgeDiff < 0) {
+          description = `Removed ${Math.abs(edgeDiff)} connection${Math.abs(edgeDiff) > 1 ? "s" : ""}`
+        } else {
+          description = "Reconnected nodes"
+        }
+      }
+    }
+
+    if (isMajorChange) {
+      lastSnapshotRef.current = currentSnapshot
+      setHistory((prevHistory) => {
+        const newHistory = prevHistory.slice(0, historyIndex + 1)
+        newHistory.push({ nodes, edges, timestamp: Date.now(), description })
+        // Keep max 20 history entries for version panel
+        if (newHistory.length > 20) newHistory.shift()
+        return newHistory
+      })
+      setHistoryIndex((prevIdx) => Math.min(prevIdx + 1, 19))
+    }
+  }, [nodes, edges, historyIndex])
 
   // True iff the current canvas state diverges from the last persisted
   // snapshot. Drives whether the Save button reads "Save" (actionable)
@@ -269,11 +314,12 @@ export function Canvas() {
       // Ctrl+Z or Cmd+Z to undo
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault()
-        if (historyIndexRef.current > 0) {
-          historyIndexRef.current -= 1
-          const prevState = history[historyIndexRef.current]
+        if (historyIndex > 0) {
+          const newIndex = historyIndex - 1
+          const prevState = history[newIndex]
           if (prevState) {
             isUndoingRef.current = true
+            setHistoryIndex(newIndex)
             setNodes(prevState.nodes)
             setEdges(prevState.edges)
           }
@@ -283,7 +329,7 @@ export function Canvas() {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [hasChanges, saveState, handleSave, history])
+  }, [hasChanges, saveState, handleSave, history, historyIndex])
 
   const inspectorNode = useMemo(
     () => nodes.find((n) => n.id === inspectorNodeId) ?? null,
@@ -594,6 +640,55 @@ export function Canvas() {
     [execution]
   )
 
+  // Restore canvas state from history
+  const handleRestoreHistory = useCallback((index: number) => {
+    const entry = history[index]
+    if (entry) {
+      isUndoingRef.current = true
+      lastSnapshotRef.current = {
+        nodeCount: entry.nodes.length,
+        edgeCount: entry.edges.length,
+        nodeIds: entry.nodes.map(n => n.id).sort(),
+        edgeIds: entry.edges.map(e => e.id).sort(),
+      }
+      setHistoryIndex(index)
+      setNodes(entry.nodes)
+      setEdges(entry.edges)
+    }
+  }, [history])
+
+  // Delete a version from history
+  const handleDeleteHistory = useCallback((index: number) => {
+    setHistory((prev) => {
+      const newHistory = prev.filter((_, i) => i !== index)
+      return newHistory
+    })
+    // Adjust index if needed
+    if (historyIndex >= index) {
+      setHistoryIndex((prev) => Math.max(0, prev - 1))
+    }
+  }, [historyIndex])
+
+  // Download a specific version as JSON
+  const handleDownloadHistory = useCallback((entry: { nodes: Node<NodeData>[]; edges: Edge[]; timestamp: number; description: string }, index: number) => {
+    const workflow = { nodes: entry.nodes, edges: entry.edges }
+    const json = JSON.stringify(workflow, null, 2)
+    const blob = new Blob([json], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    const date = new Date(entry.timestamp)
+    const pad = (n: number) => n.toString().padStart(2, "0")
+    const stamp =
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+      `_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`
+    a.download = `workflow-v${index + 1}-${stamp}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [])
+
   return (
     <ReactFlowProvider>
       <div
@@ -635,6 +730,11 @@ export function Canvas() {
           saveState={saveState}
           hasChanges={hasChanges}
           disabledKeys={disabledCatalogKeys}
+          history={history}
+          historyIndex={historyIndex}
+          onRestoreHistory={handleRestoreHistory}
+          onDeleteHistory={handleDeleteHistory}
+          onDownloadHistory={handleDownloadHistory}
           className="absolute top-4 right-4 z-10"
         />
 
