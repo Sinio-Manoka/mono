@@ -171,6 +171,12 @@ export function Canvas() {
   // Preview state: when hovering a history entry, show that version
   const [previewEntry, setPreviewEntry] = useState<HistoryEntry | null>(null)
 
+  // Clipboard for copy/paste
+  const [clipboard, setClipboard] = useState<{
+    nodes: Node<NodeData>[]
+    edges: Edge[]
+  } | null>(null)
+
   // On mount, load the persisted workflow from the API. If a snapshot
   // exists, replace the default `initialNodes` / `initialEdges` with it
   // AND record it as the "last saved" baseline so the Save button starts
@@ -295,7 +301,7 @@ export function Canvas() {
     }
   }, [nodes, edges])
 
-  // Keyboard shortcuts: Ctrl+S to save, Ctrl+Z to undo
+  // Keyboard shortcuts: Ctrl+S to save, Ctrl+Z to undo, Ctrl+C/V for copy/paste
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if typing in input/textarea/contenteditable
@@ -330,11 +336,89 @@ export function Canvas() {
           }
         }
       }
+
+      // Ctrl+C or Cmd+C to copy selected nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        const selectedNodes = nodes.filter((n) => n.selected)
+        if (selectedNodes.length > 0) {
+          e.preventDefault()
+          const selectedNodeIds = new Set(selectedNodes.map((n) => n.id))
+          // Copy edges that connect selected nodes
+          const selectedEdges = edges.filter(
+            (edge) => selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+          )
+          setClipboard({ nodes: selectedNodes, edges: selectedEdges })
+        }
+      }
+
+      // Ctrl+V or Cmd+V to paste
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (clipboard && clipboard.nodes.length > 0) {
+          e.preventDefault()
+          const timestamp = Date.now().toString(36)
+          const idMap = new Map<string, string>()
+
+          // Create new nodes with new IDs and offset positions
+          const newNodes: Node<NodeData>[] = clipboard.nodes.map((node, index) => {
+            const newId = `${node.type}-${timestamp}-${index}`
+            idMap.set(node.id, newId)
+
+            // Find the base label (strip existing copy suffix)
+            const baseLabel = (node.data.label ?? "Node").replace(/ \(copy(?: \d+)?\)$/, "")
+
+            // Find highest existing copy number for this base label
+            const copyPattern = new RegExp(
+              `^${baseLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(copy(?: (\\d+))?\\)$`
+            )
+            let maxCopyNum = 0
+            for (const n of nodes) {
+              const match = (n.data.label ?? "").match(copyPattern)
+              if (match) {
+                maxCopyNum = Math.max(maxCopyNum, match[1] ? parseInt(match[1], 10) : 1)
+              }
+            }
+            const nextCopyNum = maxCopyNum + 1
+            const newLabel =
+              nextCopyNum === 1
+                ? `${baseLabel} (copy)`
+                : `${baseLabel} (copy ${nextCopyNum})`
+
+            return {
+              ...node,
+              id: newId,
+              position: {
+                x: node.position.x + 50,
+                y: node.position.y + 50,
+              },
+              selected: true,
+              data: {
+                ...node.data,
+                label: newLabel,
+              },
+            }
+          })
+
+          // Create new edges with updated source/target IDs
+          const newEdges: Edge[] = clipboard.edges.map((edge, index) => ({
+            ...edge,
+            id: `e-${timestamp}-${index}`,
+            source: idMap.get(edge.source) || edge.source,
+            target: idMap.get(edge.target) || edge.target,
+          }))
+
+          // Deselect existing nodes and add new ones
+          setNodes((nds) => [
+            ...nds.map((n) => ({ ...n, selected: false })),
+            ...newNodes,
+          ])
+          setEdges((eds) => [...eds, ...newEdges])
+        }
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [hasChanges, saveState, handleSave, history, historyIndex])
+  }, [hasChanges, saveState, handleSave, history, historyIndex, nodes, edges, clipboard])
 
   const inspectorNode = useMemo(
     () => nodes.find((n) => n.id === inspectorNodeId) ?? null,
