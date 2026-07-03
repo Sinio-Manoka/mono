@@ -938,9 +938,14 @@ function MiniCanvas({
           panOnDrag={true}
           zoomOnScroll={true}
           fitView
-          fitViewOptions={{ padding: 0.2, minZoom: 0.5, maxZoom: 1 }}
+          // Default to as zoomed-in as possible — the mini canvas is
+          // small, so leaving fitView capped at 1× leaves the upstream
+          // nodes as tiny dots. Padding is tight so the nodes fill the
+          // available space without much empty border. Users can still
+          // zoom out manually (down to `minZoom` on the canvas).
+          fitViewOptions={{ padding: 0.05, minZoom: 0.5, maxZoom: 2 }}
           minZoom={0.3}
-          maxZoom={1.5}
+          maxZoom={2}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={12} size={1} />
