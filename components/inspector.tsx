@@ -127,16 +127,31 @@ export function Inspector({
   // panel's back/close buttons.
   const [dataPanelNodeId, setDataPanelNodeId] = useState<string | null>(null)
 
-  // Find node ID by label and select it in the mini canvas
+  // Path inside a node's data to focus when the data panel opens, e.g.
+// `body[0].body` for `{{HTTP Request.body[0].body}}`. Pushed in by the
+// Field click handler so the JSON tree auto-expands to that element.
+  const [focusPath, setFocusPath] = useState<string | null>(null)
+
+  // Find node ID by label and open the data panel for it. Called from
+  // clicking an `{{Label.path}}` expression in the URL field — the user
+  // wants to see the structure the expression resolves against.
   const selectNodeByLabel = useCallback(
-    (nodeLabel: string) => {
+    (nodeLabel: string, pathInNode: string) => {
       if (!upstreamGraph) return
       const node = upstreamGraph.nodes.find(
         (n) => (n.data.label || n.id) === nodeLabel
       )
-      if (node) {
-        setSelectedMiniNode(node.id)
-      }
+      if (!node) return
+      setSelectedMiniNode(node.id)
+      // Switch the left column to the data panel for this node. If it's
+      // already showing the panel for a different upstream node, this
+      // swaps to the right one; if it's on the mini canvas, this replaces
+      // the canvas with the panel.
+      setDataPanelNodeId(node.id)
+      // Tell the panel which element in the JSON tree to expand and
+      // highlight. Prefix with `root.` because JsonViewer's internal
+      // paths start at `root`. An empty path means "focus the whole node".
+      setFocusPath(pathInNode ? `root.${pathInNode}` : "root")
     },
     [upstreamGraph]
   )
@@ -252,6 +267,7 @@ export function Inspector({
                     nodeId={dataPanelNodeId}
                     nodes={upstreamGraph.nodes}
                     allNodeResults={allNodeResults ?? {}}
+                    focusPath={focusPath}
                     onClose={closeDataPanel}
                   />
                 ) : (
@@ -405,7 +421,7 @@ function Field({
   onChange: (value: string) => void
   placeholder?: string
   availableData?: Record<string, unknown>
-  onExpressionClick?: (nodeLabel: string) => void
+  onExpressionClick?: (nodeLabel: string, path: string) => void
 }) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
@@ -413,6 +429,11 @@ function Field({
   const [autocompleteFilter, setAutocompleteFilter] = useState("")
   const [cursorPosition, setCursorPosition] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Which autocomplete row is currently selected via the keyboard. Mouse
+  // hover also moves it (see onMouseEnter on each row). Clamped at use
+  // sites via `safeIndex` so a stale value can't crash the navigation.
+  const [autocompleteIndex, setAutocompleteIndex] = useState(0)
+  const itemRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
   const allPaths = useMemo(() => {
     if (!availableData) return []
@@ -426,6 +447,22 @@ function Field({
   const filteredPaths = allPaths.filter((p) =>
     p.toLowerCase().includes(autocompleteFilter.toLowerCase())
   )
+
+  // Cap to 20 rows for the dropdown, mirroring the slice the JSX uses
+  // below so `safeIndex` and the rendered list stay in sync.
+  const visiblePaths = useMemo(
+    () => filteredPaths.slice(0, 20),
+    [filteredPaths]
+  )
+
+  // Clamp the keyboard cursor so a stale `autocompleteIndex` (e.g. left
+  // over from a longer list that got filtered down) doesn't point past
+  // the end. Wrap-around in the keydown handler then naturally snaps it
+  // back into range.
+  const safeIndex =
+    visiblePaths.length === 0
+      ? 0
+      : Math.min(Math.max(0, autocompleteIndex), visiblePaths.length - 1)
 
   // Check if a full expression path exists in the data. Uses the same
   // `resolvePath` helper the executor uses so the in-editor highlight
@@ -482,35 +519,47 @@ function Field({
           </span>
         )
       }
-      // Check if the expression references a valid path
+      // Check if the expression references a valid path. Split the expression
+      // on the first `.` or `[` so the node label is everything before it
+      // and the path-within-the-node is everything after — that path is
+      // what the data panel will scroll/highlight on click.
       const expr = match[1]
-      const nodeLabel = expr.replace(/^\{\{|\}\}$/g, "").split(".")[0]
+      const inner = expr.replace(/^\{\{|\}\}$/g, "").trim()
+      const firstSep = inner.search(/[.[]/)
+      const nodeLabel =
+        firstSep === -1 ? inner : inner.slice(0, firstSep)
+      const pathInNode =
+        firstSep === -1
+          ? ""
+          : inner.slice(firstSep + (inner[firstSep] === "." ? 1 : 0))
       const isValid = isValidPath(expr)
 
       if (isValid) {
-        // Valid expression — emerald highlight signals "this will resolve
-        // at run time". Clickable so the user can jump to the source node
-        // in the mini canvas.
+        // Valid expression — orange highlight + clickable. Clicking opens
+        // the data panel for the source node and focuses it on the
+        // specific path so the user can see exactly where the value
+        // comes from in the upstream output.
         parts.push(
           <span
             key={`expr-${match.index}`}
             onClick={(e) => {
               e.stopPropagation()
-              onExpressionClick?.(nodeLabel)
+              onExpressionClick?.(nodeLabel, pathInNode)
             }}
-            className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded px-0.5 cursor-pointer hover:bg-emerald-500/30 transition-colors"
-            title={`Resolvable: ${expr}`}
+            className="bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded px-0.5 cursor-pointer hover:bg-orange-500/30 transition-colors"
+            title={`Resolvable: ${expr} — click to view source`}
           >
             {expr}
           </span>
         )
       } else {
-        // Invalid expression — red + strikethrough signals "won't resolve
-        // at run time, this URL will fail". Tooltip explains why.
+        // Invalid expression — render as plain text. No highlight, no
+        // strikethrough: the user typed it, it'll be sent to the engine
+        // as-is, and the engine will surface the failure in the log.
+        // Keep the title so the cursor still explains why on hover.
         parts.push(
           <span
             key={`expr-${match.index}`}
-            className="bg-red-500/15 text-red-700 dark:text-red-300 line-through rounded px-0.5"
             title={`Cannot resolve ${expr} — no upstream node with that data yet`}
           >
             {expr}
@@ -560,6 +609,55 @@ function Field({
     } else {
       setShowAutocomplete(false)
       setAutocompleteFilter("")
+      // Reset cursor when leaving the expression context so a fresh
+      // `{{` later starts at the top.
+      setAutocompleteIndex(0)
+    }
+  }
+
+  // Keyboard navigation for the autocomplete dropdown. Only active while
+  // it's open — outside that the input behaves normally (typing, caret
+  // movement, etc.).
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showAutocomplete || visiblePaths.length === 0) return
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      const next = (safeIndex + 1) % visiblePaths.length
+      setAutocompleteIndex(next)
+      // Scroll the highlighted row into view if it's off-screen.
+      requestAnimationFrame(() => {
+        itemRefs.current.get(visiblePaths[next])?.scrollIntoView({
+          block: "nearest",
+        })
+      })
+      return
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault()
+      const next =
+        (safeIndex - 1 + visiblePaths.length) % visiblePaths.length
+      setAutocompleteIndex(next)
+      requestAnimationFrame(() => {
+        itemRefs.current.get(visiblePaths[next])?.scrollIntoView({
+          block: "nearest",
+        })
+      })
+      return
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault()
+      const path = visiblePaths[safeIndex]
+      if (path) insertPath(path)
+      return
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault()
+      setShowAutocomplete(false)
+      return
     }
   }
 
@@ -595,6 +693,7 @@ function Field({
           type="text"
           value={value}
           onChange={handleInputChange}
+          onKeyDown={handleInputKeyDown}
           onFocus={() => setIsFocused(true)}
           onBlur={() => {
             setIsFocused(false)
@@ -619,21 +718,35 @@ function Field({
         />
 
         {/* Autocomplete dropdown */}
-        {showAutocomplete && filteredPaths.length > 0 && (
+        {showAutocomplete && visiblePaths.length > 0 && (
           <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
-            {filteredPaths.slice(0, 20).map((path) => (
-              <button
-                key={path}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => insertPath(path)}
-                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-              >
-                <code className="text-xs text-orange-600 dark:text-orange-400">
-                  {`{{${path}}}`}
-                </code>
-              </button>
-            ))}
+            {visiblePaths.map((path, idx) => {
+              const isActive = idx === safeIndex
+              return (
+                <button
+                  key={path}
+                  ref={(el) => {
+                    // Callback ref populates the map keyed by path so
+                    // `handleInputKeyDown` can scroll the highlighted row
+                    // into view on ArrowUp / ArrowDown.
+                    if (el) itemRefs.current.set(path, el)
+                    else itemRefs.current.delete(path)
+                  }}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setAutocompleteIndex(idx)}
+                  onClick={() => insertPath(path)}
+                  className={cn(
+                    "w-full px-3 py-1.5 text-left text-sm transition-colors flex items-center gap-2",
+                    isActive ? "bg-muted" : "hover:bg-muted/60"
+                  )}
+                >
+                  <code className="text-xs text-orange-600 dark:text-orange-400">
+                    {`{{${path}}}`}
+                  </code>
+                </button>
+              )
+            })}
           </div>
         )}
 
@@ -852,11 +965,15 @@ function DataPanel({
   nodeId,
   nodes,
   allNodeResults,
+  focusPath,
   onClose,
 }: {
   nodeId: string
   nodes: Node<NodeData>[]
   allNodeResults: Record<string, unknown>
+  /** Path inside the JSON tree to auto-expand and highlight, e.g.
+   *  `root.body[0].body`. Pass `null` when no expression is focused. */
+  focusPath: string | null
   onClose: () => void
 }) {
   const node = nodes.find((n) => n.id === nodeId)
@@ -942,7 +1059,12 @@ function DataPanel({
           strings, numbers, booleans, null. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
         {result !== undefined ? (
-          <JsonViewer data={result} title={label} nodeLabel={label} />
+          <JsonViewer
+            data={result}
+            title={label}
+            nodeLabel={label}
+            focusPath={focusPath}
+          />
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 px-2 py-3 text-center text-xs text-muted-foreground">
             No data yet. Run the workflow to populate this node's output.

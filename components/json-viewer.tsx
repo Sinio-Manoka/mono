@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { IconChevronRight, IconX, IconArrowsMaximize, IconCopy, IconCheck } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,16 +16,115 @@ type JsonViewerProps = {
   title?: string
   /** Node label for drag-and-drop expressions (e.g., "Request" -> "{{Request.field}}") */
   nodeLabel?: string
+  /** Path inside the tree to highlight, e.g. "root.body[0].body". When
+   *  set, every ancestor path is force-expanded and the matching
+   *  element gets a highlight ring so the user can spot it instantly.
+   *  Pass `null` (the default) to leave the tree alone. */
+  focusPath?: string | null
 }
 
 type ExpandedState = Set<string>
 
-export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
+/**
+ * Walk a `root.a[0].b`-style path and return every ancestor prefix.
+ * The returned set always contains the bare root. Used to force-expand
+ * a path that the user navigated to via an `{{...}}` click.
+ *
+ *   "root"                     → ["root"]
+ *   "root.body"                → ["root", "root.body"]
+ *   "root.body[0].body"        → ["root", "root.body", "root.body[0]"]
+ */
+function parentPathsOf(path: string): string[] {
+  const tokens: string[] = []
+  let buffer = ""
+  for (let i = 0; i < path.length; i++) {
+    const ch = path[i]
+    if (ch === "." || ch === "[" || ch === "]") {
+      if (buffer) {
+        tokens.push(buffer)
+        buffer = ""
+      }
+    } else {
+      buffer += ch
+    }
+  }
+  if (buffer) tokens.push(buffer)
+
+  const ancestors: string[] = []
+  let cumulative = ""
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    const prev = i > 0 ? tokens[i - 1] : ""
+    const tokenIsArrayIndex = /^\d+$/.test(token)
+    const prevIsArrayIndex = /^\d+$/.test(prev)
+    if (i === 0) {
+      cumulative = token
+    } else if (prevIsArrayIndex) {
+      // Previous was an array index → next must be an object key
+      // (descending into a single array element). Use dot.
+      cumulative = `${cumulative}.${token}`
+    } else if (tokenIsArrayIndex) {
+      // Previous was an object key → indexing into an array. Use bracket.
+      cumulative = `${cumulative}[${token}]`
+    } else {
+      // Object key → object key. Use dot.
+      cumulative = `${cumulative}.${token}`
+    }
+    ancestors.push(cumulative)
+  }
+  // Drop the last entry — that's the target itself, not an ancestor.
+  return ancestors.slice(0, -1)
+}
+
+export function JsonViewer({ data, title, nodeLabel, focusPath }: JsonViewerProps) {
   const [search, setSearch] = useState("")
   const [showSearch, setShowSearch] = useState(false)
-  const [expanded, setExpanded] = useState<ExpandedState>(new Set(["root"]))
+  // User-driven expand/collapse only. `expanded` (below) is the merged
+  // view used by `renderValue` — it adds focus-path ancestors on top of
+  // this set so user toggles survive focus changes without a cascading
+  // setState-in-effect.
+  const [userExpanded, setUserExpanded] = useState<ExpandedState>(
+    () => new Set(["root"])
+  )
   const [isExpandedView, setIsExpandedView] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  const focusExpansion = useMemo(
+    () => (focusPath ? new Set(parentPathsOf(focusPath)) : null),
+    [focusPath]
+  )
+
+  const expanded = useMemo(() => {
+    const merged = new Set(userExpanded)
+    if (focusExpansion) {
+      for (const p of focusExpansion) merged.add(p)
+    }
+    return merged
+  }, [userExpanded, focusExpansion])
+
+  // When `focusPath` changes, the matching element gets attached to this
+  // ref via callback refs inside `renderValue`. After commit, an effect
+  // scrolls it into view so the user lands exactly on the highlighted
+  // row instead of having to hunt for it in a long tree.
+  const focusedElementRef = useRef<HTMLElement | null>(null)
+  const setFocusedElementRef = useCallback((el: HTMLElement | null) => {
+    focusedElementRef.current = el
+  }, [])
+
+  useEffect(() => {
+    if (!focusPath) return
+    // Defer one frame so the parent expansions and the focused row are
+    // both committed before we ask the browser to scroll. Without this
+    // rAF the element can be reported as not-yet-laid-out on first
+    // mount and the scroll silently no-ops.
+    const id = requestAnimationFrame(() => {
+      focusedElementRef.current?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [focusPath])
 
   const handleCopy = async () => {
     try {
@@ -54,7 +153,7 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
   }, [])
 
   const toggleExpand = (path: string) => {
-    setExpanded((prev) => {
+    setUserExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(path)) {
         next.delete(path)
@@ -67,11 +166,11 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
 
   const expandAll = () => {
     const allPaths = getAllPaths(data, "root")
-    setExpanded(new Set(allPaths))
+    setUserExpanded(new Set(allPaths))
   }
 
   const collapseAll = () => {
-    setExpanded(new Set(["root"]))
+    setUserExpanded(new Set(["root"]))
   }
 
   const getAllPaths = (value: unknown, path: string): string[] => {
@@ -155,25 +254,36 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
     return cleanPath ? `{{${nodeLabel}.${cleanPath}}}` : `{{${nodeLabel}}}`
   }
 
-  // Draggable wrapper for values
+  // Draggable wrapper for values. When `isFocused` is true, the wrapper
+  // takes an orange ring so the focused element stands out from the
+  // rest of the tree (used when the user clicked an `{{...}}` in the
+  // URL field and we want to highlight where it comes from).
   const DraggableValue = ({
     path,
+    isFocused,
     children,
   }: {
     path: string
+    isFocused?: boolean
     children: React.ReactNode
   }) => {
     if (!nodeLabel) return <>{children}</>
     const expr = pathToExpression(path)
     return (
       <span
+        ref={isFocused ? setFocusedElementRef : undefined}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData("text/plain", expr)
           e.dataTransfer.setData("application/x-expression", expr)
           e.dataTransfer.effectAllowed = "copy"
         }}
-        className="cursor-grab active:cursor-grabbing hover:bg-primary/10 rounded px-0.5 -mx-0.5"
+        className={cn(
+          "rounded px-0.5 -mx-0.5 cursor-grab active:cursor-grabbing",
+          isFocused
+            ? "ring-2 ring-orange-500 bg-orange-500/15 hover:bg-orange-500/25"
+            : "hover:bg-primary/10"
+        )}
         title={`Drag to insert ${expr}`}
       >
         {children}
@@ -191,7 +301,7 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
 
     if (value === null) {
       return (
-        <DraggableValue path={path}>
+        <DraggableValue path={path} isFocused={path === focusPath}>
           <span className="text-red-500">null</span>
         </DraggableValue>
       )
@@ -199,7 +309,7 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
 
     if (value === undefined) {
       return (
-        <DraggableValue path={path}>
+        <DraggableValue path={path} isFocused={path === focusPath}>
           <span className="text-red-500">undefined</span>
         </DraggableValue>
       )
@@ -207,7 +317,7 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
 
     if (typeof value === "boolean") {
       return (
-        <DraggableValue path={path}>
+        <DraggableValue path={path} isFocused={path === focusPath}>
           <span className="text-blue-500">
             {value ? "true" : "false"}
           </span>
@@ -217,7 +327,7 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
 
     if (typeof value === "number") {
       return (
-        <DraggableValue path={path}>
+        <DraggableValue path={path} isFocused={path === focusPath}>
           <span className="text-orange-500">{value}</span>
         </DraggableValue>
       )
@@ -225,7 +335,7 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
 
     if (typeof value === "string") {
       return (
-        <DraggableValue path={path}>
+        <DraggableValue path={path} isFocused={path === focusPath}>
           <span className="text-green-600 dark:text-green-400">
             "{highlightText(value)}"
           </span>
@@ -260,14 +370,23 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
               {value.map((item, idx) => {
                 const itemStr = JSON.stringify(item)
                 const show = shouldShowItem(itemStr)
+                const itemPath = `${path}[${idx}]`
+                const isFocused = itemPath === focusPath
                 return (
                   <div
                     key={idx}
-                    className={cn("flex gap-2", !show && "opacity-30")}
+                    ref={isFocused ? setFocusedElementRef : undefined}
+                    className={cn(
+                      "flex gap-2 rounded",
+                      !show && "opacity-30",
+                      isFocused
+                        ? "-mx-1 px-1 ring-2 ring-orange-500 bg-orange-500/10 cursor-grab"
+                        : "hover:bg-muted/40"
+                    )}
                   >
                     <span className="text-muted-foreground min-w-8 text-xs">{idx}</span>
                     <div>
-                      {renderValue(item, idx, `${path}[${idx}]`, depth + 1)}
+                      {renderValue(item, idx, itemPath, depth + 1)}
                     </div>
                   </div>
                 )
@@ -313,13 +432,21 @@ export function JsonViewer({ data, title, nodeLabel }: JsonViewerProps) {
                 const valueMatch = shouldShowItem(valueStr)
                 const show = keyMatch || valueMatch
                 const keyPath = `${path}.${k}`
+                const isFocused = keyPath === focusPath
 
                 return (
                   <div
                     key={k}
-                    className={cn("flex gap-2", !show && "opacity-30")}
+                    ref={isFocused ? setFocusedElementRef : undefined}
+                    className={cn(
+                      "flex gap-2 rounded",
+                      !show && "opacity-30",
+                      isFocused
+                        ? "-mx-1 px-1 ring-2 ring-orange-500 bg-orange-500/10 cursor-grab"
+                        : "hover:bg-muted/40"
+                    )}
                   >
-                    <DraggableValue path={keyPath}>
+                    <DraggableValue path={keyPath} isFocused={isFocused}>
                       <span className="text-purple-600 dark:text-purple-400">
                         {highlightText(k)}:
                       </span>
