@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState } from "react"
 import { IconChevronDown, IconSearch } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 type LogViewerProps = {
   data: unknown
-  title: string
+  /** Kept for API symmetry with other viewers; currently unused here. */
+  title?: string
 }
 
-export function LogViewer({ data, title }: LogViewerProps) {
+export function LogViewer({ data }: LogViewerProps) {
   const [search, setSearch] = useState("")
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["root"]))
 
@@ -67,7 +68,7 @@ export function LogViewer({ data, title }: LogViewerProps) {
         !search || value.toLowerCase().includes(search.toLowerCase())
       return (
         <span className={cn("text-green-500", !matchesSearch && "opacity-50")}>
-          "{value}"
+          {`"${value}"`}
         </span>
       )
     }

@@ -377,7 +377,7 @@ export function JsonViewer({
       return (
         <DraggableValue path={path} isFocused={path === focusPath}>
           <span className="text-green-600 dark:text-green-400">
-            "{highlightText(value)}"
+            {`"${highlightText(value)}"`}
           </span>
         </DraggableValue>
       )

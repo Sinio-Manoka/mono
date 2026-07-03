@@ -24,7 +24,6 @@ export function KeyValueEditor({
   value,
   onChange,
   label,
-  description,
 }: KeyValueEditorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [pairs, setPairs] = useState<KeyValuePair[]>(() => {

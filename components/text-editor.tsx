@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
@@ -25,7 +24,6 @@ export function TextEditor({
   label,
   description,
   placeholder,
-  rows = 6,
 }: TextEditorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [tempValue, setTempValue] = useState(value)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo, useCallback } from "react"
+import { useRef, useMemo, useCallback } from "react"
 import { IconWand } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -137,7 +137,6 @@ function tokenizeJson(json: string): React.ReactNode[] {
 export function JsonEditor({ value, onChange, placeholder, className }: JsonEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
-  const [localValue, setLocalValue] = useState(value)
 
   // Sync scroll between textarea and pre
   const handleScroll = () => {
@@ -149,27 +148,25 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
 
   // Validation
   const validation = useMemo(() => {
-    if (!localValue?.trim()) return { valid: true, error: null }
+    if (!value?.trim()) return { valid: true, error: null }
     try {
-      JSON.parse(localValue)
+      JSON.parse(value)
       return { valid: true, error: null }
     } catch (e) {
       return { valid: false, error: (e as Error).message }
     }
-  }, [localValue])
+  }, [value])
 
   // Format JSON
   const formatJson = useCallback(() => {
-    if (!localValue?.trim() || !validation.valid) return
+    if (!value?.trim() || !validation.valid) return
     try {
-      const parsed = JSON.parse(localValue)
-      const formatted = JSON.stringify(parsed, null, 2)
-      setLocalValue(formatted)
-      onChange(formatted)
+      const parsed = JSON.parse(value)
+      onChange(JSON.stringify(parsed, null, 2))
     } catch {
       // Can't format
     }
-  }, [localValue, validation.valid, onChange])
+  }, [value, validation.valid, onChange])
 
   // Handle key events for auto-formatting
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -189,8 +186,7 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
       const start = textarea.selectionStart
       const end = textarea.selectionEnd
 
-      const newValue = localValue.substring(0, start) + "  " + localValue.substring(end)
-      setLocalValue(newValue)
+      const newValue = value.substring(0, start) + "  " + value.substring(end)
       onChange(newValue)
 
       // Move cursor after the inserted spaces
@@ -216,12 +212,11 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
 
       // Don't auto-close if there's a selection or if next char is the same
       if (start !== end) return
-      if (e.key === '"' && localValue[start] === '"') return
+      if (e.key === '"' && value[start] === '"') return
 
       e.preventDefault()
       const newValue =
-        localValue.substring(0, start) + e.key + pairs[e.key] + localValue.substring(end)
-      setLocalValue(newValue)
+        value.substring(0, start) + e.key + pairs[e.key] + value.substring(end)
       onChange(newValue)
 
       setTimeout(() => {
@@ -232,27 +227,20 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
 
   // Auto-format after typing a closing bracket/brace followed by Enter
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value
-    setLocalValue(newValue)
-    onChange(newValue)
+    onChange(e.target.value)
   }
 
-  // Sync with external value changes
-  useEffect(() => {
-    setLocalValue(value)
-  }, [value])
-
   // Highlighted content
-  const highlighted = useMemo(() => tokenizeJson(localValue), [localValue])
+  const highlighted = useMemo(() => tokenizeJson(value), [value])
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <div
         className={cn(
           "relative flex-1 overflow-hidden border bg-background transition-colors font-mono text-sm",
-          localValue?.trim() && !validation.valid
+          value?.trim() && !validation.valid
             ? "border-red-500/50"
-            : localValue?.trim() && validation.valid
+            : value?.trim() && validation.valid
             ? "border-green-500/50"
             : "border-border"
         )}
@@ -265,7 +253,7 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
           aria-hidden="true"
         >
           {highlighted}
-          {!localValue && (
+          {!value && (
             <span className="text-muted-foreground">{placeholder}</span>
           )}
         </pre>
@@ -273,7 +261,7 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
         {/* Editable textarea */}
         <textarea
           ref={textareaRef}
-          value={localValue}
+          value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onScroll={handleScroll}
@@ -285,12 +273,12 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {localValue?.trim() && !validation.valid ? (
+          {value?.trim() && !validation.valid ? (
             <span className="text-xs text-red-500">{validation.error}</span>
           ) : (
             <span className="text-xs text-muted-foreground">
-              {localValue?.length || 0} chars
-              {localValue?.trim() && validation.valid && (
+              {value?.length || 0} chars
+              {value?.trim() && validation.valid && (
                 <span className="text-green-500 ml-2">Valid JSON</span>
               )}
               <span className="text-muted-foreground/50 ml-2">Shift+Enter to format</span>
@@ -302,7 +290,7 @@ export function JsonEditor({ value, onChange, placeholder, className }: JsonEdit
           variant="ghost"
           size="sm"
           onClick={formatJson}
-          disabled={!localValue?.trim() || !validation.valid}
+          disabled={!value?.trim() || !validation.valid}
           className="h-7 text-xs gap-1"
         >
           <IconWand className="size-3" />

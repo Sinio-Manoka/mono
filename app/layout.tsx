@@ -1,9 +1,10 @@
-import { Geist, Geist_Mono, Noto_Sans } from "next/font/google"
+import { Geist_Mono, Noto_Sans } from "next/font/google"
 
 import "./globals.css"
+
 import { AgentationToolbar } from "@/components/agentation"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
 const notoSans = Noto_Sans({subsets:['latin'],variable:'--font-sans'})
 

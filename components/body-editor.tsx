@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
@@ -14,14 +13,14 @@ import { JsonEditor } from "@/components/json-editor"
 
 type BodyType = "raw" | "form-data" | "form-urlencoded" | "graphql"
 
+type GraphqlData = { query: string; variables?: string }
+
 type BodyData = {
   type: BodyType
   raw?: string
   formData?: Array<{ key: string; value: string }>
-  graphql?: { query: string; variables?: string }
+  graphql?: GraphqlData
 }
-
-type KeyValuePair = { key: string; value: string }
 
 type BodyEditorProps = {
   value: string
@@ -146,7 +145,10 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
                     onChange={(e) =>
                       setBodyData({
                         ...bodyData,
-                        graphql: { ...bodyData.graphql, query: e.target.value } as any,
+                        graphql: {
+                          query: e.target.value,
+                          variables: bodyData.graphql?.variables,
+                        },
                       })
                     }
                     placeholder="query { ... }"
@@ -162,7 +164,10 @@ export function BodyEditor({ value, onChange }: BodyEditorProps) {
                   onChange={(val) =>
                     setBodyData({
                       ...bodyData,
-                      graphql: { ...bodyData.graphql, variables: val } as any,
+                      graphql: {
+                        query: bodyData.graphql?.query ?? "",
+                        variables: val,
+                      },
                     })
                   }
                   placeholder='{"key": "value"}'

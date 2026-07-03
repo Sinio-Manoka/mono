@@ -289,7 +289,6 @@ export function Inspector({
                     selectedNodeId={selectedMiniNode}
                     onNodeClick={(nodeId) => setSelectedMiniNode(nodeId)}
                     onNodeDoubleClick={handleMiniNodeDoubleClick}
-                    allNodeResults={allNodeResults}
                   />
                 )}
               </div>
@@ -814,7 +813,6 @@ const miniCanvasStyle = {
 
 // Mini node for trigger type (simple, no inline fields)
 function MiniTriggerNode({
-  data,
   selected,
 }: NodeProps<Node<NodeData>>) {
   return (
@@ -879,7 +877,6 @@ function MiniCanvas({
   selectedNodeId,
   onNodeClick,
   onNodeDoubleClick,
-  allNodeResults,
 }: {
   nodes: Node<NodeData>[]
   edges: Edge[]
@@ -999,16 +996,22 @@ function DataPanel({
   const [isExpandedView, setIsExpandedView] = useState(false)
   const [copied, setCopied] = useState(false)
 
+  // All hooks above this line — no early returns before they're called,
+  // or React's Rules of Hooks will throw at runtime. The early `return
+  // null` for missing nodes is deferred to the bottom of the function.
   const node = nodes.find((n) => n.id === nodeId)
-  if (!node) return null
-
-  const label = (node.data.label as string | undefined) || node.id
 
   // Prefer the runtime result; fall back to the configured input data for
   // triggers that haven't been executed yet so the user can still drag
-  // fields into a downstream URL while authoring the workflow.
-  let result: unknown = allNodeResults[label]
-  if (result === undefined && node.type === "trigger") {
+  // fields into a downstream URL while authoring the workflow. We look up
+  // results by label, but use `node.id` as the fallback key for the
+  // initial lookup so we don't depend on the not-yet-narrowed `label`
+  // string (see below).
+  const labelKey = node
+    ? (node.data.label as string | undefined) || node.id
+    : ""
+  let result: unknown = allNodeResults[labelKey]
+  if (node && result === undefined && node.type === "trigger") {
     const inputData = (node.data as TriggerNodeData).inputData
     if (inputData?.trim()) {
       try {
@@ -1075,6 +1078,15 @@ function DataPanel({
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+  // Deferred early return — Rules of Hooks require every hook to run on
+  // every render, so the not-found branch has to live after all hook
+  // calls above.
+  if (!node) return null
+
+  // `node` is now narrowed to `Node<NodeData>`, so this `label` is
+  // guaranteed to be a string (the `|| node.id` covers missing labels).
+  const label = (node.data.label as string | undefined) || node.id
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -1171,7 +1183,7 @@ function DataPanel({
           />
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 px-2 py-3 text-center text-xs text-muted-foreground">
-            No data yet. Run the workflow to populate this node's output.
+            {`No data yet. Run the workflow to populate this node’s output.`}
           </div>
         )}
       </div>

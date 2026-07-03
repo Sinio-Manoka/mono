@@ -53,12 +53,14 @@ export function Select({
 
   // When the menu opens, jump the keyboard cursor onto the currently
   // selected option (or the first row when nothing's selected) so Enter
-  // doesn't commit a value the user can't see.
-  useEffect(() => {
-    if (open) {
+  // doesn't commit a value the user can't see. Done in the open handler
+  // (not in a `useEffect`) so we don't pay a sync-render round trip.
+  const openMenu = (next: boolean) => {
+    if (next) {
       setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0)
     }
-  }, [open, selectedIndex])
+    setOpen(next)
+  }
 
   // Close on any pointer-down outside the container.
   useEffect(() => {
@@ -77,7 +79,7 @@ export function Select({
     if (open) return
     if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
       e.preventDefault()
-      setOpen(true)
+      openMenu(true)
     }
   }
 
@@ -137,7 +139,7 @@ export function Select({
         type="button"
         id={id}
         disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        onClick={() => !disabled && openMenu(!open)}
         onKeyDown={handleTriggerKeyDown}
         aria-haspopup="listbox"
         aria-expanded={open}
