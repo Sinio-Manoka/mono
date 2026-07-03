@@ -5,35 +5,41 @@ import type {
   RequestNodeData,
   TriggerNodeData,
 } from "@/components/nodes/types"
+import { resolvePath } from "@/lib/expression-path"
 
 /**
  * Resolves `{{NodeLabel.path}}` expressions in a string using results from
- * previous nodes. Supports dot notation for nested access.
+ * previous nodes. The path can mix dot and bracket notation
+ * (`Request.body[0].id`, `Trigger.items[2].name`).
  *
  * Examples:
- *   {{Request.body.id}} -> accesses results["Request"].body.id
- *   {{Trigger.input}}   -> accesses results["Trigger"].input
+ *   {{Request.body.id}}       -> results["Request"].body.id
+ *   {{Request.body[0].id}}    -> results["Request"].body[0].id
+ *   {{Trigger.input}}         -> results["Trigger"].input
  */
 function resolveExpressions(
   value: string,
   nodeResults: Record<string, unknown>
 ): string {
   return value.replace(/\{\{([^}]+)\}\}/g, (match, expr: string) => {
-    const parts = expr.trim().split(".")
-    const nodeLabel = parts[0]
-    const path = parts.slice(1)
+    const trimmed = expr.trim()
+    // Split off the leading node label so we can look it up in the results
+    // map directly; everything after the first `.` (or `[`) is the path.
+    const firstDot = trimmed.search(/[.[]/)
+    if (firstDot === -1) {
+      const value = nodeResults[trimmed]
+      if (value === undefined) return match
+      return typeof value === "object" ? JSON.stringify(value) : String(value ?? "")
+    }
+
+    const nodeLabel = trimmed.slice(0, firstDot)
+    const path = trimmed.slice(firstDot + (trimmed[firstDot] === "." ? 1 : 0))
 
     let current: unknown = nodeResults[nodeLabel]
     if (current === undefined) return match // Keep original if node not found
 
-    for (const key of path) {
-      if (current === null || current === undefined) return match
-      if (typeof current === "object" && key in current) {
-        current = (current as Record<string, unknown>)[key]
-      } else {
-        return match // Keep original if path not found
-      }
-    }
+    current = resolvePath(current, path)
+    if (current === undefined) return match // Keep original if path not found
 
     // Convert to string for interpolation
     if (typeof current === "object") {

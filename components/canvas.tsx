@@ -921,6 +921,34 @@ export function Canvas() {
           }
           return Object.keys(results).length > 0 ? results : undefined
         })()}
+        // Upstream nodes and edges for the mini canvas
+        upstreamGraph={(() => {
+          if (!inspectorNode) return undefined
+
+          // Find all upstream node IDs by traversing backwards
+          const upstreamIds = new Set<string>()
+          const queue = [inspectorNode.id]
+          while (queue.length > 0) {
+            const currentId = queue.shift()!
+            const incomingEdges = edges.filter((e) => e.target === currentId)
+            for (const edge of incomingEdges) {
+              if (!upstreamIds.has(edge.source)) {
+                upstreamIds.add(edge.source)
+                queue.push(edge.source)
+              }
+            }
+          }
+
+          // Get upstream nodes and edges
+          const upstreamNodes = nodes.filter((n) => upstreamIds.has(n.id))
+          const upstreamEdges = edges.filter(
+            (e) => upstreamIds.has(e.source) && upstreamIds.has(e.target)
+          )
+
+          return upstreamNodes.length > 0
+            ? { nodes: upstreamNodes, edges: upstreamEdges }
+            : undefined
+        })()}
         // Execution log for the currently selected node — the Inspector
         // shows the last result (or error) below the form so the user
         // can see what each step produced.
