@@ -28,6 +28,13 @@ type JsonViewerProps = {
    *  with a Ctrl+F shortcut. */
   search?: string
   onSearchChange?: (value: string) => void
+  /** Controlled fullscreen view. When provided, the host owns the
+   *  expand button and JsonViewer's internal header doesn't render the
+   *  copy/expand buttons. The fullscreen dialog is still rendered by
+   *  JsonViewer (it needs the tree-rendering closure); only its
+   *  open/close state is controlled. */
+  isExpandedView?: boolean
+  onExpandedViewChange?: (open: boolean) => void
 }
 
 type ExpandedState = Set<string>
@@ -90,6 +97,8 @@ export function JsonViewer({
   focusPath,
   search: searchProp,
   onSearchChange,
+  isExpandedView: isExpandedViewProp,
+  onExpandedViewChange,
 }: JsonViewerProps) {
   const isSearchControlled = searchProp !== undefined
   const [internalSearch, setInternalSearch] = useState("")
@@ -108,7 +117,14 @@ export function JsonViewer({
   const [userExpanded, setUserExpanded] = useState<ExpandedState>(
     () => new Set(["root"])
   )
-  const [isExpandedView, setIsExpandedView] = useState(false)
+  const [internalIsExpandedView, setInternalIsExpandedView] = useState(false)
+  const isExpandedViewControlled = isExpandedViewProp !== undefined
+  const isExpandedView = isExpandedViewControlled
+    ? isExpandedViewProp
+    : internalIsExpandedView
+  const setIsExpandedView = isExpandedViewControlled
+    ? (onExpandedViewChange ?? (() => {}))
+    : setInternalIsExpandedView
   const [copied, setCopied] = useState(false)
 
   const focusExpansion = useMemo(
@@ -496,33 +512,13 @@ export function JsonViewer({
 
   return (
     <div className="flex flex-col h-full gap-0 bg-background rounded-lg border border-border overflow-hidden">
-      {/* Header strip. Three modes:
-          - Controlled search: just copy + expand (no Ctrl+F hint, no
-            search input — host owns the search UI in its own header).
+      {/* Header strip. Two modes:
+          - Controlled search: no header strip at all (the host owns
+            the search input AND the copy/expand buttons in its own
+            header, so rendering them here would duplicate chrome).
           - Uncontrolled, search closed: Ctrl+F hint + copy + expand.
           - Uncontrolled, search open: full search bar (handled below). */}
-      {isSearchControlled ? (
-        <div className="flex items-center justify-end gap-1 px-3 py-2 border-b border-border bg-muted/20">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleCopy}
-            className="h-7 w-7 p-0"
-            title="Copy"
-          >
-            {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setIsExpandedView(true)}
-            className="h-7 w-7 p-0"
-            title="Expand"
-          >
-            <IconArrowsMaximize className="size-4" />
-          </Button>
-        </div>
-      ) : !showSearch ? (
+      {!isSearchControlled && !showSearch ? (
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/20 text-xs text-muted-foreground">
           <span>Press <kbd className="px-1.5 py-0.5 bg-background border border-border rounded text-xs">Ctrl+F</kbd> to search</span>
           <div className="flex items-center gap-1">

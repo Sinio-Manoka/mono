@@ -9,8 +9,11 @@ import {
   type ChangeEvent,
 } from "react"
 import {
+  IconArrowsMaximize,
   IconBolt,
+  IconCheck,
   IconChevronLeft,
+  IconCopy,
   IconSearch,
   IconTrash,
   IconWorld,
@@ -989,24 +992,13 @@ function DataPanel({
   const [search, setSearch] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  // Ctrl/Cmd+F focuses the search input; Escape blurs it (and clears
-  // the query so the tree goes back to its unfiltered state).
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
-        e.preventDefault()
-        searchInputRef.current?.focus()
-        searchInputRef.current?.select()
-        return
-      }
-      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
-        setSearch("")
-        searchInputRef.current?.blur()
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [])
+  // Copy + fullscreen live in the panel header (next to the close
+  // button) rather than inside the JsonViewer. The fullscreen dialog
+  // itself is still rendered by JsonViewer (it owns the tree renderer),
+  // but its open/close state is driven from here via controlled props.
+  const [isExpandedView, setIsExpandedView] = useState(false)
+  const [copied, setCopied] = useState(false)
+
   const node = nodes.find((n) => n.id === nodeId)
   if (!node) return null
 
@@ -1050,6 +1042,40 @@ function DataPanel({
     }
   }
 
+  const handleCopy = useCallback(async () => {
+    if (result === undefined) return
+    try {
+      const text =
+        typeof result === "string"
+          ? result
+          : JSON.stringify(result, null, 2)
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error("Failed to copy", err)
+    }
+  }, [result])
+
+  // Ctrl/Cmd+F focuses the search input; Escape blurs it (and clears
+  // the query so the tree goes back to its unfiltered state).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+        return
+      }
+      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
+        setSearch("")
+        searchInputRef.current?.blur()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Header: back to canvas on the left, close on the right. Both call
@@ -1074,8 +1100,9 @@ function DataPanel({
         {/* Search input — owned by the panel so it sits next to the node
             name. `pr-1` keeps the X close button from crowding it. The
             input uses `min-w-0` so it can shrink instead of pushing the
-            row wider than the column. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+            row wider than the column. `ml-2` adds breathing room between
+            the name group and the search bar. */}
+        <div className="ml-2 flex min-w-0 flex-1 items-center gap-1">
           <IconSearch className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={searchInputRef}
@@ -1087,6 +1114,32 @@ function DataPanel({
             className="min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
           />
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={handleCopy}
+          aria-label="Copy JSON"
+          title="Copy JSON"
+          disabled={result === undefined}
+        >
+          {copied ? (
+            <IconCheck className="size-4 text-emerald-500" />
+          ) : (
+            <IconCopy className="size-4" />
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setIsExpandedView(true)}
+          aria-label="Expand to fullscreen"
+          title="Expand to fullscreen"
+          disabled={result === undefined}
+        >
+          <IconArrowsMaximize className="size-4" />
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -1113,6 +1166,8 @@ function DataPanel({
             focusPath={focusPath}
             search={search}
             onSearchChange={setSearch}
+            isExpandedView={isExpandedView}
+            onExpandedViewChange={setIsExpandedView}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 px-2 py-3 text-center text-xs text-muted-foreground">
