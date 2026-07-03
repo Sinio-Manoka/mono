@@ -31,6 +31,7 @@ type SidebarProps = {
   onRestoreHistory?: (index: number) => void
   onDeleteHistory?: (index: number) => void
   onDownloadHistory?: (entry: HistoryEntry, index: number) => void
+  onPreviewHistory?: (entry: HistoryEntry | null) => void
   className?: string
 }
 
@@ -47,6 +48,7 @@ export function Sidebar({
   onRestoreHistory,
   onDeleteHistory,
   onDownloadHistory,
+  onPreviewHistory,
   className,
 }: SidebarProps) {
   const [open, setOpen] = useState(false)
@@ -85,13 +87,14 @@ export function Sidebar({
         tone="muted"
       />
 
-      {history.length > 0 && onRestoreHistory && onDeleteHistory && onDownloadHistory && (
+      {history.length > 0 && onRestoreHistory && onDeleteHistory && onDownloadHistory && onPreviewHistory && (
         <HistoryPanel
           history={history}
           currentIndex={historyIndex}
           onRestore={onRestoreHistory}
           onDelete={onDeleteHistory}
           onDownload={onDownloadHistory}
+          onPreview={onPreviewHistory}
         />
       )}
 

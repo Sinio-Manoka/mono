@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { IconHistory, IconX, IconDownload, IconTrash } from "@tabler/icons-react"
-import { ReactFlow, ReactFlowProvider, useReactFlow, type Node, type Edge } from "@xyflow/react"
+import type { Node, Edge } from "@xyflow/react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -21,6 +21,7 @@ type HistoryPanelProps = {
   onRestore: (index: number) => void
   onDelete: (index: number) => void
   onDownload: (entry: HistoryEntry, index: number) => void
+  onPreview: (entry: HistoryEntry | null) => void
   className?: string
 }
 
@@ -30,17 +31,23 @@ export function HistoryPanel({
   onRestore,
   onDelete,
   onDownload,
+  onPreview,
   className,
 }: HistoryPanelProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [currentTime, setCurrentTime] = useState(() => Date.now())
 
-  // Update current time every minute for relative time display
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(Date.now()), 60000)
     return () => clearInterval(interval)
   }, [])
+
+  // Clear preview when panel closes
+  useEffect(() => {
+    if (!isOpen) {
+      onPreview(null)
+    }
+  }, [isOpen, onPreview])
 
   const recentHistory = history.slice(-20).reverse()
 
@@ -124,11 +131,11 @@ export function HistoryPanel({
                 <div
                   key={entry.timestamp}
                   className={cn(
-                    "relative px-4 py-3 transition-colors",
+                    "px-4 py-3 transition-colors",
                     isCurrent ? "bg-primary/10" : "hover:bg-muted/50"
                   )}
-                  onMouseEnter={() => setHoveredIndex(idx)}
-                  onMouseLeave={() => setHoveredIndex(null)}
+                  onMouseEnter={() => onPreview(entry)}
+                  onMouseLeave={() => onPreview(null)}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium truncate flex-1">
@@ -191,20 +198,6 @@ export function HistoryPanel({
                       <IconTrash className="size-3.5" />
                     </Button>
                   </div>
-
-                  {hoveredIndex === idx && (
-                    <div
-                      className="absolute right-full top-0 mr-2 w-72 h-48 rounded-lg border bg-background shadow-xl overflow-hidden z-50"
-                      style={{ pointerEvents: "none" }}
-                    >
-                      <ReactFlowProvider>
-                        <MiniWorkflowPreview
-                          nodes={entry.nodes}
-                          edges={entry.edges}
-                        />
-                      </ReactFlowProvider>
-                    </div>
-                  )}
                 </div>
               )
             })}
@@ -212,41 +205,5 @@ export function HistoryPanel({
         )}
       </div>
     </div>
-  )
-}
-
-function MiniWorkflowPreview({
-  nodes,
-  edges,
-}: {
-  nodes: Node<NodeData>[]
-  edges: Edge[]
-}) {
-  const { fitView } = useReactFlow()
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fitView({ padding: 0.3, duration: 0 })
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [fitView, nodes, edges])
-
-  return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      elementsSelectable={false}
-      panOnDrag={false}
-      zoomOnScroll={false}
-      zoomOnPinch={false}
-      zoomOnDoubleClick={false}
-      preventScrolling={false}
-      fitView
-      fitViewOptions={{ padding: 0.3 }}
-      proOptions={{ hideAttribution: true }}
-      className="bg-muted/30"
-    />
   )
 }

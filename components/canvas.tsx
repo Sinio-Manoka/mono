@@ -34,6 +34,7 @@ import {
 import type { NodeExecutionStatus } from "@/lib/execution-status"
 import { Inspector } from "@/components/inspector"
 import { Sidebar } from "@/components/sidebar"
+import type { HistoryEntry } from "@/components/history-panel"
 
 // Wrap each node component so it receives an `onUpdate` callback bound
 // to its own id AND its current execution status. The wrapper takes
@@ -162,10 +163,13 @@ export function Canvas() {
 
   // Undo history: stores previous states of the canvas for Ctrl+Z
   // Only tracks major changes (node/edge additions/removals)
-  const [history, setHistory] = useState<{ nodes: Node<NodeData>[]; edges: Edge[]; timestamp: number; description: string }[]>([])
+  const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const isUndoingRef = useRef(false)
   const lastSnapshotRef = useRef<{ nodeCount: number; edgeCount: number; nodeIds: string[]; edgeIds: string[] } | null>(null)
+
+  // Preview state: when hovering a history entry, show that version
+  const [previewEntry, setPreviewEntry] = useState<HistoryEntry | null>(null)
 
   // On mount, load the persisted workflow from the API. If a snapshot
   // exists, replace the default `initialNodes` / `initialEdges` with it
@@ -248,10 +252,11 @@ export function Canvas() {
 
     if (isMajorChange) {
       lastSnapshotRef.current = currentSnapshot
+      const newEntry: HistoryEntry = { nodes, edges, timestamp: Date.now(), description }
+
       setHistory((prevHistory) => {
         const newHistory = prevHistory.slice(0, historyIndex + 1)
-        newHistory.push({ nodes, edges, timestamp: Date.now(), description })
-        // Keep max 20 history entries for version panel
+        newHistory.push(newEntry)
         if (newHistory.length > 20) newHistory.shift()
         return newHistory
       })
@@ -670,7 +675,7 @@ export function Canvas() {
   }, [historyIndex])
 
   // Download a specific version as JSON
-  const handleDownloadHistory = useCallback((entry: { nodes: Node<NodeData>[]; edges: Edge[]; timestamp: number; description: string }, index: number) => {
+  const handleDownloadHistory = useCallback((entry: HistoryEntry, index: number) => {
     const workflow = { nodes: entry.nodes, edges: entry.edges }
     const json = JSON.stringify(workflow, null, 2)
     const blob = new Blob([json], { type: "application/json" })
@@ -689,29 +694,44 @@ export function Canvas() {
     URL.revokeObjectURL(url)
   }, [])
 
+  // Preview a history entry on hover
+  const handlePreviewHistory = useCallback((entry: HistoryEntry | null) => {
+    setPreviewEntry(entry)
+  }, [])
+
+  // Determine which nodes/edges to display
+  const displayNodes = previewEntry ? previewEntry.nodes : nodes
+  const displayEdges = previewEntry ? previewEntry.edges : edges
+  const isPreviewMode = previewEntry !== null
+
   return (
     <ReactFlowProvider>
       <div
         className="relative h-svh w-full"
-        style={reactFlowThemeStyle}
+        style={{
+          ...reactFlowThemeStyle,
+          // Apply grayscale filter when in preview mode
+          ...(isPreviewMode ? { filter: "grayscale(100%) contrast(0.9)" } : {}),
+        }}
       >
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={displayNodes}
+          edges={displayEdges}
           nodeTypes={nodeTypesFor(updateNodeData, getNodeExecutionStatus)}
-          elementsSelectable
-          nodesConnectable
-          deleteKeyCode={["Delete", "Backspace"]}
+          elementsSelectable={!isPreviewMode}
+          nodesConnectable={!isPreviewMode}
+          nodesDraggable={!isPreviewMode}
+          deleteKeyCode={isPreviewMode ? [] : ["Delete", "Backspace"]}
           // Left-drag on the pane draws a marquee to multi-select nodes.
           // Panning is moved to the middle (1) and right (2) mouse buttons
           // so the two gestures don't fight each other on a left-drag.
-          selectionOnDrag
-          panOnDrag={[1, 2]}
-          onConnect={handleConnect}
-          onNodesChange={handleNodesChange}
-          onEdgesChange={handleEdgesChange}
-          onNodeDoubleClick={handleNodeDoubleClick}
-          onPaneClick={handlePaneClick}
+          selectionOnDrag={!isPreviewMode}
+          panOnDrag={isPreviewMode ? false : [1, 2]}
+          onConnect={isPreviewMode ? undefined : handleConnect}
+          onNodesChange={isPreviewMode ? undefined : handleNodesChange}
+          onEdgesChange={isPreviewMode ? undefined : handleEdgesChange}
+          onNodeDoubleClick={isPreviewMode ? undefined : handleNodeDoubleClick}
+          onPaneClick={isPreviewMode ? undefined : handlePaneClick}
           snapToGrid
           snapGrid={[16, 16]}
           fitView
@@ -721,6 +741,19 @@ export function Canvas() {
           <Controls />
           <MiniMap />
         </ReactFlow>
+
+        {/* Preview mode banner */}
+        {isPreviewMode && previewEntry && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-6 py-3 rounded-full bg-zinc-800/95 border border-zinc-600 shadow-2xl">
+            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="text-sm font-medium text-zinc-200">
+              Preview: {previewEntry.description}
+            </span>
+            <span className="text-xs text-zinc-400">
+              {previewEntry.nodes.length} nodes · {previewEntry.edges.length} edges
+            </span>
+          </div>
+        )}
 
         <Sidebar
           onAddNode={addNode}
@@ -735,10 +768,11 @@ export function Canvas() {
           onRestoreHistory={handleRestoreHistory}
           onDeleteHistory={handleDeleteHistory}
           onDownloadHistory={handleDownloadHistory}
+          onPreviewHistory={handlePreviewHistory}
           className="absolute top-4 right-4 z-10"
         />
 
-        {hasManuellTrigger ? (
+        {hasManuellTrigger && !isPreviewMode ? (
           <Button
             type="button"
             onClick={handleExecuteWorkflow}
