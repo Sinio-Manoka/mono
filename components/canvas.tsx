@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { IconLoader2, IconPlayerPlay } from "@tabler/icons-react"
 import {
   Background,
@@ -160,6 +160,11 @@ export function Canvas() {
   // `react-hooks/refs` lint rule.
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("")
 
+  // Undo history: stores previous states of the canvas for Ctrl+Z
+  const [history, setHistory] = useState<{ nodes: Node<NodeData>[]; edges: Edge[] }[]>([])
+  const historyIndexRef = useRef(-1)
+  const isUndoingRef = useRef(false)
+
   // On mount, load the persisted workflow from the API. If a snapshot
   // exists, replace the default `initialNodes` / `initialEdges` with it
   // AND record it as the "last saved" baseline so the Save button starts
@@ -193,6 +198,22 @@ export function Canvas() {
     }
   }, [])
 
+  // Track changes to nodes/edges and push to history for undo
+  useEffect(() => {
+    if (isUndoingRef.current) {
+      isUndoingRef.current = false
+      return
+    }
+    setHistory((prev) => {
+      const newHistory = prev.slice(0, historyIndexRef.current + 1)
+      newHistory.push({ nodes, edges })
+      // Keep max 50 history entries
+      if (newHistory.length > 50) newHistory.shift()
+      historyIndexRef.current = newHistory.length - 1
+      return newHistory
+    })
+  }, [nodes, edges])
+
   // True iff the current canvas state diverges from the last persisted
   // snapshot. Drives whether the Save button reads "Save" (actionable)
   // or "Saved" (clean).
@@ -223,6 +244,46 @@ export function Canvas() {
       setSaveState("idle")
     }
   }, [nodes, edges])
+
+  // Keyboard shortcuts: Ctrl+S to save, Ctrl+Z to undo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in input/textarea/contenteditable
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      // Ctrl+S or Cmd+S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault()
+        if (hasChanges && saveState !== "saving") {
+          handleSave()
+        }
+      }
+
+      // Ctrl+Z or Cmd+Z to undo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault()
+        if (historyIndexRef.current > 0) {
+          historyIndexRef.current -= 1
+          const prevState = history[historyIndexRef.current]
+          if (prevState) {
+            isUndoingRef.current = true
+            setNodes(prevState.nodes)
+            setEdges(prevState.edges)
+          }
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [hasChanges, saveState, handleSave, history])
 
   const inspectorNode = useMemo(
     () => nodes.find((n) => n.id === inspectorNodeId) ?? null,
