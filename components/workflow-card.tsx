@@ -47,8 +47,26 @@ export function WorkflowCard({
     }
   }
 
+  function open() {
+    router.push(`/${summary.id}/workflow`)
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      open()
+    }
+  }
+
   return (
-    <div className="relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={onKeyDown}
+      aria-label={`Open workflow ${summary.name}`}
+      className="relative flex cursor-pointer flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
       <div className="space-y-1">
         <div className="text-base font-semibold">{summary.name}</div>
         <div className="font-mono text-xs text-muted-foreground">
@@ -68,6 +86,10 @@ export function WorkflowCard({
             size="icon"
             aria-label={`Delete workflow ${summary.name}`}
             className="absolute right-2 top-2 size-8 text-muted-foreground hover:text-destructive"
+            // Keep the click here from triggering the card's navigation.
+            // Without this the user sees the dialog flash then get bounced
+            // to the editor — because the card's onClick runs even though
+            // we never asked it to navigate.
             onClick={(e) => e.stopPropagation()}
             disabled={deleting}
           >
@@ -90,8 +112,8 @@ export function WorkflowCard({
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
-                e.preventDefault()
-                handleDelete()
+                e.stopPropagation()
+                void handleDelete()
               }}
               disabled={deleting}
               className="bg-destructive text-white hover:bg-destructive/90"
