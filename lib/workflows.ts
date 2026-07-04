@@ -142,3 +142,21 @@ export async function createWorkflow(
   await saveWorkflow(id, { name: trimmed, nodes: [], edges: [] })
   return { id }
 }
+
+export async function renameWorkflow(
+  id: string,
+  name: string
+): Promise<{ name: string }> {
+  const trimmed = name.trim()
+  if (!trimmed) {
+    throw new Error("Name is required")
+  }
+  const existing = await getWorkflow(id)
+  if (!existing) {
+    const err = new Error(`Workflow not found: ${id}`)
+    ;(err as Error & { code?: string }).code = "ENOENT"
+    throw err
+  }
+  await saveWorkflow(id, { ...existing, name: trimmed })
+  return { name: trimmed }
+}

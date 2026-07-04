@@ -11,7 +11,6 @@ import {
 } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import type { NodeData, NodeType } from "@/components/nodes/types"
 import { CreateNodeDialog } from "@/components/create-node-dialog"
@@ -34,8 +33,6 @@ type SidebarProps = {
   onDownloadHistory?: (entry: HistoryEntry, index: number) => void
   onPreviewHistory?: (entry: HistoryEntry | null) => void
   className?: string
-  name: string
-  onNameChange: (name: string) => void
 }
 
 export function Sidebar({
@@ -53,21 +50,15 @@ export function Sidebar({
   onDownloadHistory,
   onPreviewHistory,
   className,
-  name,
-  onNameChange,
 }: SidebarProps) {
   const [open, setOpen] = useState(false)
   const [resetKey, setResetKey] = useState(0)
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
-      <Input
-        value={name}
-        onChange={(e) => onNameChange(e.target.value)}
-        placeholder="Workflow name"
-        aria-label="Workflow name"
-        className="h-9"
-      />
+    // `items-start` keeps the icon-pill buttons at their natural width instead
+    // of stretching to fill the column (the flex-col default of `items-stretch`
+    // would make every button a full-width pill even when collapsed).
+    <div className={cn("flex flex-col items-start gap-2", className)}>
       <ActionButton
         groupName="add-node"
         icon={<IconPlus className="size-5" stroke={2.5} aria-hidden />}

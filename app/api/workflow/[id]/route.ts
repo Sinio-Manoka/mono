@@ -6,6 +6,7 @@ import type { NodeData } from "@/components/nodes/types"
 import {
   deleteWorkflow,
   getWorkflow,
+  renameWorkflow,
   saveWorkflow,
   type WorkflowSnapshot,
 } from "@/lib/workflows"
@@ -74,4 +75,45 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
   return NextResponse.json({ ok: true })
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    )
+  }
+
+  const name =
+    body && typeof body === "object" && typeof (body as { name?: unknown }).name === "string"
+      ? (body as { name: string }).name
+      : ""
+
+  const trimmed = name.trim()
+  if (!trimmed) {
+    return NextResponse.json(
+      { error: "Name is required" },
+      { status: 400 }
+    )
+  }
+
+  try {
+    const result = await renameWorkflow(id, trimmed)
+    return NextResponse.json(result)
+  } catch (err) {
+    const code = (err as Error & { code?: string }).code
+    if (code === "ENOENT") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+    throw err
+  }
 }
