@@ -55,7 +55,14 @@ export function Sidebar({
   const [resetKey, setResetKey] = useState(0)
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    // `items-start` keeps the icon-pill buttons at their natural width instead
+    // of stretching to fill the column (the flex-col default of `items-stretch`
+    // would make every button a full-width pill even when collapsed).
+    // The canvas positions this with `absolute top-4 left-4` so the LEFT edge
+    // is pinned — when a single button expands the sidebar grows rightward,
+    // and the left-aligned buttons stay put. No fixed width is needed: the
+    // sidebar shrinks to its widest child (collapsed: ~48px, expanded: ~140px).
+    <div className={cn("flex flex-col items-start gap-2", className)}>
       <ActionButton
         groupName="add-node"
         icon={<IconPlus className="size-5" stroke={2.5} aria-hidden />}
@@ -130,7 +137,7 @@ function groupClasses(name: GroupName) {
       return {
         group: "group/add-node",
         buttonHover:
-          "group-hover/add-node:gap-2 group-hover/add-node:pl-3 group-hover/add-node:pr-4 group-hover/add-node:shadow-xl group-focus-visible/add-node:gap-2 group-focus-visible/add-node:pl-3 group-focus-visible/add-node:pr-4",
+          "group-hover/add-node:gap-2 group-hover/add-node:shadow-xl group-focus-visible/add-node:gap-2 group-focus-visible/add-node:shadow-xl",
         labelHover:
           "group-hover/add-node:max-w-xs group-hover/add-node:opacity-100 group-focus-visible/add-node:max-w-xs group-focus-visible/add-node:opacity-100",
       }
@@ -138,7 +145,7 @@ function groupClasses(name: GroupName) {
       return {
         group: "group/save",
         buttonHover:
-          "group-hover/save:gap-2 group-hover/save:pl-3 group-hover/save:pr-4 group-hover/save:shadow-xl group-focus-visible/save:gap-2 group-focus-visible/save:pl-3 group-focus-visible/save:pr-4",
+          "group-hover/save:gap-2 group-hover/save:shadow-xl group-focus-visible/save:gap-2 group-focus-visible/save:shadow-xl",
         labelHover:
           "group-hover/save:max-w-xs group-hover/save:opacity-100 group-focus-visible/save:max-w-xs group-focus-visible/save:opacity-100",
       }
@@ -146,7 +153,7 @@ function groupClasses(name: GroupName) {
       return {
         group: "group/download",
         buttonHover:
-          "group-hover/download:gap-2 group-hover/download:pl-3 group-hover/download:pr-4 group-hover/download:shadow-xl group-focus-visible/download:gap-2 group-focus-visible/download:pl-3 group-focus-visible/download:pr-4",
+          "group-hover/download:gap-2 group-hover/download:shadow-xl group-focus-visible/download:gap-2 group-focus-visible/download:shadow-xl",
         labelHover:
           "group-hover/download:max-w-xs group-hover/download:opacity-100 group-focus-visible/download:max-w-xs group-focus-visible/download:opacity-100",
       }
@@ -154,7 +161,7 @@ function groupClasses(name: GroupName) {
       return {
         group: "group/load",
         buttonHover:
-          "group-hover/load:gap-2 group-hover/load:pl-3 group-hover/load:pr-4 group-hover/load:shadow-xl group-focus-visible/load:gap-2 group-focus-visible/load:pl-3 group-focus-visible/load:pr-4",
+          "group-hover/load:gap-2 group-hover/load:shadow-xl group-focus-visible/load:gap-2 group-focus-visible/load:shadow-xl",
         labelHover:
           "group-hover/load:max-w-xs group-hover/load:opacity-100 group-focus-visible/load:max-w-xs group-focus-visible/load:opacity-100",
       }
@@ -199,7 +206,12 @@ function ActionButton({
         groups.group,
         // Resting state: icon-only pill. The hover/focus utilities under
         // `groups.buttonHover` open it up to make room for the label.
-        "inline-flex h-12 items-center justify-center gap-0 rounded-full px-3.5 shadow-lg",
+        // `justify-start` (not center) pins the icon to the left padding so
+        // every button's icon stays vertically aligned regardless of which
+        // sibling is currently expanded — center would make the expanded
+        // button's icon drift right and the other icons look like they
+        // shifted left.
+        "inline-flex h-12 items-center justify-start gap-0 rounded-full px-3.5 shadow-lg",
         "transition-all duration-200 ease-out",
         groups.buttonHover,
         "focus-visible:ring-3 focus-visible:outline-none",

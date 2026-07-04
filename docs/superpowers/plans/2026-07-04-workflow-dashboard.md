@@ -950,10 +950,11 @@ git commit -m "feat(dashboard): wire card delete and create-workflow dialog"
 Open `components/sidebar.tsx` and `components/canvas.tsx`. Locate:
 - `Sidebar`'s `SidebarProps` type (top of file)
 - `Sidebar`'s render root (`<div className={cn("flex flex-col gap-2", className)}>`)
-- `Canvas`'s state hooks (likely `useState` calls early in the function)
-- `Canvas`'s save handler (search for `await fetch` or `/api/workflow/`)
+- `Canvas`'s state hooks — particularly `lastSavedSnapshot` (around line 171) and the `useMemo` for `hasChanges` (around line 379). **`hasChanges` is NOT a state setter — it is a `useMemo` comparing `JSON.stringify({ nodes, edges })` to `lastSavedSnapshot`. The plan accounts for this in Step 3 below.**
+- `Canvas`'s save handler (around line 384) — has `const snapshot = { nodes, edges }`, `body: JSON.stringify(snapshot)`, and `setLastSavedSnapshot(JSON.stringify(snapshot))`.
+- `Canvas`'s GET handler (around line 210) — fetches `/api/workflow/<id>` and parses `{ nodes, edges }` only.
 
-You will use the exact line numbers in Steps 2 and 3.
+You will use these locations in Steps 2 and 3.
 
 - [ ] **Step 2: Add name prop + input to `components/sidebar.tsx`**
 
@@ -988,49 +989,107 @@ import { Input } from "@/components/ui/input"
 
 - [ ] **Step 3: Add name state to `components/canvas.tsx`**
 
-Add to imports at the top (alongside the existing `useState` import — it should already be there):
+`hasChanges` is a `useMemo`, not state. The dirty-tracking strategy: extend the memo comparison and the `lastSavedSnapshot` string to include `name`. Any name change then naturally flips `hasChanges` to true without needing a setter.
 
-```ts
-import { useState } from "react"
-```
-
-is already present. Confirm. Then:
-
-(a) Add state. Find the line that holds the existing `const [hasChanges, setHasChanges] = useState(false)` (or the closest analogue) and add immediately above it:
+(a) Add state. Immediately above the `const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("")` line (currently around line 171), add:
 
 ```tsx
   const [workflowName, setWorkflowName] = useState<string>("")
 ```
 
-(b) Seed `workflowName` from the GET response. Find the `fetch(\`/api/workflow/${workflowId}\`)` call's `.then((r) => r.json())` (or equivalent) and add the assignment:
+(b) Seed `workflowName` from the GET response. In the `useEffect` that fetches `/api/workflow/<id>` (around line 210), extend the `data` type and add a `setWorkflowName` call. Find:
 
 ```tsx
-        const data = (await res.json()) as {
-          name?: string
-          nodes: Node<NodeData>[]
-          edges: Edge[]
-        }
-        setWorkflowName(data.name ?? workflowId)
+      .then((data: { nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
+        if (cancelled || !data) return
+        if (Array.isArray(data.nodes) && Array.isArray(data.edges)) {
+          if (data.nodes.length > 0 || data.edges.length > 0) {
+            setNodes(data.nodes)
+            setEdges(data.edges)
+            setLastSavedSnapshot(
+              JSON.stringify({ nodes: data.nodes, edges: data.edges })
+            )
+          }
 ```
 
-(c) Pass `name` and `onNameChange` to `<Sidebar />`. In the JSX where `<Sidebar ... />` is rendered, add two props:
+Replace the type cast on `data` and the body with:
+
+```tsx
+      .then((data: { name?: string; nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
+        if (cancelled || !data) return
+        if (Array.isArray(data.nodes) && Array.isArray(data.edges)) {
+          const loadedName = data.name ?? workflowId ?? "default"
+          setWorkflowName(loadedName)
+          if (data.nodes.length > 0 || data.edges.length > 0) {
+            setNodes(data.nodes)
+            setEdges(data.edges)
+            setLastSavedSnapshot(
+              JSON.stringify({
+                name: loadedName,
+                nodes: data.nodes,
+                edges: data.edges,
+              })
+            )
+          } else {
+            // Empty snapshot — record the name-only baseline so the dirty
+            // check is accurate.
+            setLastSavedSnapshot(JSON.stringify({ name: loadedName, nodes: [], edges: [] }))
+          }
+        }
+      })
+```
+
+(c) Extend the `hasChanges` memo to include `name`. Find (around line 379):
+
+```tsx
+  const hasChanges = useMemo(() => {
+    const current = JSON.stringify({ nodes, edges })
+    return current !== lastSavedSnapshot
+  }, [nodes, edges, lastSavedSnapshot])
+```
+
+Replace with:
+
+```tsx
+  const hasChanges = useMemo(() => {
+    const current = JSON.stringify({ name: workflowName, nodes, edges })
+    return current !== lastSavedSnapshot
+  }, [workflowName, nodes, edges, lastSavedSnapshot])
+```
+
+(d) Pass `name` and `onNameChange` to `<Sidebar />`. In the JSX where `<Sidebar ... />` is rendered, add two props:
 
 ```tsx
         name={workflowName}
-        onNameChange={(next) => {
-          setWorkflowName(next)
-          setHasChanges(true)
-        }}
+        onNameChange={(next) => setWorkflowName(next)}
 ```
 
-(d) Include `name` in the save body. Find the `body: JSON.stringify(...)` inside the save `fetch` and replace it with:
+(No setter call needed — the memo in (c) will flip `hasChanges` automatically.)
+
+(e) Include `name` in the save body and the `lastSavedSnapshot`. Find the `handleSave` callback (around line 384):
 
 ```tsx
-        body: JSON.stringify({
-          name: workflowName,
-          nodes,
-          edges,
-        }),
+      const snapshot = { nodes, edges }
+      const res = await fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapshot),
+      })
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`)
+      setLastSavedSnapshot(JSON.stringify(snapshot))
+```
+
+Replace with:
+
+```tsx
+      const snapshot = { name: workflowName, nodes, edges }
+      const res = await fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapshot),
+      })
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`)
+      setLastSavedSnapshot(JSON.stringify(snapshot))
 ```
 
 - [ ] **Step 4: Verify typecheck passes**
