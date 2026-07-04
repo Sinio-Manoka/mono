@@ -1049,7 +1049,7 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
           onDeleteHistory={handleDeleteHistory}
           onDownloadHistory={handleDownloadHistory}
           onPreviewHistory={handlePreviewHistory}
-          className="absolute top-4 right-4 z-10"
+          className="absolute top-4 left-4 z-10"
         />
 
         {hasManuellTrigger && !isPreviewMode ? (

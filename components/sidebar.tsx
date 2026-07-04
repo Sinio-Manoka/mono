@@ -58,13 +58,11 @@ export function Sidebar({
     // `items-start` keeps the icon-pill buttons at their natural width instead
     // of stretching to fill the column (the flex-col default of `items-stretch`
     // would make every button a full-width pill even when collapsed).
-    // `w-36` fixes the sidebar width so it doesn't grow when a single button
-    // expands on hover. Without this, the canvas positions the sidebar with
-    // `absolute right-4`, so the right edge is pinned and the sidebar grows
-    // LEFTWARD to fit the expanded button — taking the left-aligned buttons
-    // with it. A fixed width keeps every button's position stable across
-    // hover states.
-    <div className={cn("flex flex-col items-start gap-2 w-36", className)}>
+    // The canvas positions this with `absolute top-4 left-4` so the LEFT edge
+    // is pinned — when a single button expands the sidebar grows rightward,
+    // and the left-aligned buttons stay put. No fixed width is needed: the
+    // sidebar shrinks to its widest child (collapsed: ~48px, expanded: ~140px).
+    <div className={cn("flex flex-col items-start gap-2", className)}>
       <ActionButton
         groupName="add-node"
         icon={<IconPlus className="size-5" stroke={2.5} aria-hidden />}
