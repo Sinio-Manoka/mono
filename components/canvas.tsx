@@ -1035,22 +1035,30 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
           </div>
         )}
 
-        <Sidebar
-          onAddNode={addNode}
-          onSave={handleSave}
-          onDownload={handleDownload}
-          onLoad={handleLoad}
-          saveState={saveState}
-          hasChanges={hasChanges}
-          disabledKeys={disabledCatalogKeys}
-          history={history}
-          historyIndex={historyIndex}
-          onRestoreHistory={handleRestoreHistory}
-          onDeleteHistory={handleDeleteHistory}
-          onDownloadHistory={handleDownloadHistory}
-          onPreviewHistory={handlePreviewHistory}
-          className="absolute top-4 left-4 z-10"
-        />
+        {/* Hover-reveal wrapper. The thin column on the left edge acts as
+            a hover trigger; while it's hovered, the Sidebar child fades
+            and slides into view. The Sidebar itself is a child of this
+            group, so moving the mouse from the trigger zone onto the
+            Sidebar keeps it open. pointer-events-none prevents the
+            invisible Sidebar from intercepting clicks on the canvas. */}
+        <div className="group absolute inset-y-0 left-0 z-20 w-16">
+          <Sidebar
+            onAddNode={addNode}
+            onSave={handleSave}
+            onDownload={handleDownload}
+            onLoad={handleLoad}
+            saveState={saveState}
+            hasChanges={hasChanges}
+            disabledKeys={disabledCatalogKeys}
+            history={history}
+            historyIndex={historyIndex}
+            onRestoreHistory={handleRestoreHistory}
+            onDeleteHistory={handleDeleteHistory}
+            onDownloadHistory={handleDownloadHistory}
+            onPreviewHistory={handlePreviewHistory}
+            className="absolute top-4 left-4 z-10 pointer-events-none -translate-x-2 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100"
+          />
+        </div>
 
         {hasManuellTrigger && !isPreviewMode ? (
           <Button
