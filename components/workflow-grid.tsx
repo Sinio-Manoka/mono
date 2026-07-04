@@ -1,5 +1,6 @@
 import Link from "next/link"
 
+import { formatRelative } from "@/lib/format-relative"
 import type { WorkflowSummary } from "@/lib/workflows"
 import { WorkflowCard } from "@/components/workflow-card"
 
@@ -12,7 +13,10 @@ export function WorkflowGrid({ summaries }: { summaries: WorkflowSummary[] }) {
           href={`/${summary.id}/workflow`}
           className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-xl"
         >
-          <WorkflowCard summary={summary} />
+          <WorkflowCard
+            summary={summary}
+            relativeTime={formatRelative(summary.updatedAt)}
+          />
         </Link>
       ))}
     </div>

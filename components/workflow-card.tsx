@@ -18,18 +18,13 @@ import {
 import { Button } from "@/components/ui/button"
 import type { WorkflowSummary } from "@/lib/workflows"
 
-function formatRelative(iso: string): string {
-  const then = new Date(iso).getTime()
-  const now = Date.now()
-  const seconds = Math.round((now - then) / 1000)
-  if (seconds < 60) return "just now"
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
-  if (seconds < 86_400) return `${Math.round(seconds / 3600)}h ago`
-  if (seconds < 604_800) return `${Math.round(seconds / 86_400)}d ago`
-  return new Date(iso).toLocaleDateString()
-}
-
-export function WorkflowCard({ summary }: { summary: WorkflowSummary }) {
+export function WorkflowCard({
+  summary,
+  relativeTime,
+}: {
+  summary: WorkflowSummary
+  relativeTime: string
+}) {
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,7 +57,7 @@ export function WorkflowCard({ summary }: { summary: WorkflowSummary }) {
       </div>
       <div className="text-xs text-muted-foreground">
         {summary.nodeCount} {summary.nodeCount === 1 ? "node" : "nodes"} ·{" "}
-        {formatRelative(summary.updatedAt)}
+        {relativeTime}
       </div>
 
       <AlertDialog>
