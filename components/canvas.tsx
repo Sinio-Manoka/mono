@@ -149,8 +149,8 @@ type CanvasProps = {
 }
 
 export function Canvas({ workflowId }: CanvasProps = {}) {
-  const [nodes, setNodes] = useState<Node<NodeData>[]>(initialNodes)
-  const [edges, setEdges] = useState<Edge[]>(initialEdges)
+  const [nodes, setNodes] = useState<Node<NodeData>[]>([])
+  const [edges, setEdges] = useState<Edge[]>([])
   // The inspector is driven by a dedicated id, not by React Flow's built-in
   // `selected` flag. That way single-click can still set the visual selection
   // (the ring on the node) without opening the drawer — only a double click
@@ -228,8 +228,12 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
         }
       })
       .catch(() => {
-        // Network error — keep the defaults. No user-visible error needed
-        // for the first-load case.
+        // Network error — fall back to the default template so a failed
+        // first load isn't a blank canvas. lastSavedSnapshot stays "",
+        // which makes the canvas read as dirty so the user can save the
+        // defaults to disk.
+        setNodes(initialNodes)
+        setEdges(initialEdges)
       })
     return () => {
       cancelled = true
