@@ -71,28 +71,6 @@ const nodeTypesFor = (
   },
 })
 
-const initialNodes: Node<NodeData>[] = [
-  {
-    id: "trigger-1",
-    type: "trigger",
-    position: { x: 0, y: 0 },
-    data: { label: "On Request", triggerType: "request" },
-  },
-  {
-    id: "request-1",
-    type: "request",
-    position: { x: 280, y: 0 },
-    data: {
-      label: "HTTP Request",
-      method: "GET",
-      url: "https://jsonplaceholder.typicode.com/posts",
-      headers: '{"Content-Type": "application/json"}',
-    },
-  },
-]
-
-const initialEdges: Edge[] = [{ id: "e1", source: "trigger-1", target: "request-1" }]
-
 /**
  * Maps React Flow's user-facing CSS variables to the shadcn tokens defined in
  * `app/globals.css`. Set inline on the wrapper so Tailwind v4's CSS tree-shake
@@ -201,12 +179,11 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
     edges: Edge[]
   } | null>(null)
 
-  // On mount, load the persisted workflow from the API. If a snapshot
-  // exists, replace the default `initialNodes` / `initialEdges` with it
-  // AND record it as the "last saved" baseline so the Save button starts
-  // in its "Saved" (clean) state. A failure (404 / network) just keeps
-  // the defaults — the user still sees the example flow, and `hasChanges`
-  // will report dirty so they can save it for the first time.
+  // On mount, load the persisted workflow from the API. The canvas
+  // mounts empty so a freshly created workflow never flashes the
+  // example template; the GET response (which may itself be empty
+  // for a new workflow, or contain a saved graph) populates the
+  // canvas. A failure leaves the canvas empty and logs the error.
   useEffect(() => {
     let cancelled = false
     fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`)
@@ -227,13 +204,10 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
           )
         }
       })
-      .catch(() => {
-        // Network error — fall back to the default template so a failed
-        // first load isn't a blank canvas. lastSavedSnapshot stays "",
-        // which makes the canvas read as dirty so the user can save the
-        // defaults to disk.
-        setNodes(initialNodes)
-        setEdges(initialEdges)
+      .catch((err) => {
+        // Network error — leave the canvas empty (matches the initial
+        // state). No default template is shown on the failure path either.
+        console.error("[load] workflow", err)
       })
     return () => {
       cancelled = true
