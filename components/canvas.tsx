@@ -214,15 +214,17 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
       .then((data: { nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
         if (cancelled || !data) return
         if (Array.isArray(data.nodes) && Array.isArray(data.edges)) {
-          if (data.nodes.length > 0 || data.edges.length > 0) {
-            setNodes(data.nodes)
-            setEdges(data.edges)
-            setLastSavedSnapshot(
-              JSON.stringify({ nodes: data.nodes, edges: data.edges })
-            )
-          }
-          // Empty snapshot on the server — leave `lastSavedSnapshot` as
-          // "" so the current default state reads as dirty.
+          // Always replace the initial state with whatever the server
+          // returned, even if the snapshot is empty. New workflows are
+          // created with empty nodes/edges by POST /api/workflows, so
+          // skipping the empty case here would fall through to the
+          // default Trigger+Request template — which is no longer what
+          // we want for a fresh canvas.
+          setNodes(data.nodes)
+          setEdges(data.edges)
+          setLastSavedSnapshot(
+            JSON.stringify({ nodes: data.nodes, edges: data.edges })
+          )
         }
       })
       .catch(() => {
