@@ -77,7 +77,7 @@ export async function listWorkflows(): Promise<WorkflowSummary[]> {
       }
       summaries.push({
         id,
-        name: parsed.name ?? id,
+        name: parsed.name?.trim() || id,
         nodeCount: parsed.nodes.length,
         updatedAt: stat.mtime.toISOString(),
       })
@@ -96,9 +96,9 @@ export async function getWorkflow(id: string): Promise<WorkflowSnapshot | null> 
     const parsed: unknown = JSON.parse(raw)
     if (!isWorkflowSnapshot(parsed)) return null
     return parsed
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null
-    throw err
+  } catch {
+    // ENOENT, parse error, or any other fs/JSON failure — treat as "no saved workflow"
+    return null
   }
 }
 
@@ -114,11 +114,12 @@ export async function saveWorkflow(
   )
 }
 
-export async function deleteWorkflow(id: string): Promise<void> {
+export async function deleteWorkflow(id: string): Promise<boolean> {
   try {
     await fs.unlink(snapshotPath(id))
+    return true
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false
     throw err
   }
 }

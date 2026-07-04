@@ -53,7 +53,10 @@ export async function POST(
   }
 
   await saveWorkflow(id, {
-    name: typeof parsed.name === "string" ? parsed.name : undefined,
+    name:
+      typeof parsed.name === "string" && parsed.name.trim()
+        ? parsed.name.trim()
+        : undefined,
     nodes: parsed.nodes as Node<NodeData>[],
     edges: parsed.edges as Edge[],
   })
@@ -66,6 +69,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  await deleteWorkflow(id)
+  const deleted = await deleteWorkflow(id)
+  if (!deleted) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
   return NextResponse.json({ ok: true })
 }
