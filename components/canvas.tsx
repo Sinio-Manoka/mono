@@ -168,6 +168,7 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
   // re-evaluates — refs can't be read during render, and reading
   // `lastSavedSnapshotRef.current` inside a `useMemo` would trip the
   // `react-hooks/refs` lint rule.
+  const [workflowName, setWorkflowName] = useState<string>("")
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("")
 
   // Undo / redo history. `history` is the forward stack up to
@@ -211,18 +212,26 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
     let cancelled = false
     fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
+      .then((data: { name?: string; nodes?: Node<NodeData>[]; edges?: Edge[] } | null) => {
         if (cancelled || !data) return
         if (Array.isArray(data.nodes) && Array.isArray(data.edges)) {
+          const loadedName = data.name ?? workflowId ?? "default"
+          setWorkflowName(loadedName)
           if (data.nodes.length > 0 || data.edges.length > 0) {
             setNodes(data.nodes)
             setEdges(data.edges)
             setLastSavedSnapshot(
-              JSON.stringify({ nodes: data.nodes, edges: data.edges })
+              JSON.stringify({
+                name: loadedName,
+                nodes: data.nodes,
+                edges: data.edges,
+              })
             )
+          } else {
+            // Empty snapshot — record the name-only baseline so the dirty
+            // check is accurate.
+            setLastSavedSnapshot(JSON.stringify({ name: loadedName, nodes: [], edges: [] }))
           }
-          // Empty snapshot on the server — leave `lastSavedSnapshot` as
-          // "" so the current default state reads as dirty.
         }
       })
       .catch(() => {
@@ -377,14 +386,14 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
   // snapshot. Drives whether the Save button reads "Save" (actionable)
   // or "Saved" (clean).
   const hasChanges = useMemo(() => {
-    const current = JSON.stringify({ nodes, edges })
+    const current = JSON.stringify({ name: workflowName, nodes, edges })
     return current !== lastSavedSnapshot
-  }, [nodes, edges, lastSavedSnapshot])
+  }, [workflowName, nodes, edges, lastSavedSnapshot])
 
   const handleSave = useCallback(async () => {
     setSaveState("saving")
     try {
-      const snapshot = { nodes, edges }
+      const snapshot = { name: workflowName, nodes, edges }
       const res = await fetch(`/api/workflow/${encodeURIComponent(workflowId ?? "default")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -402,7 +411,7 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
       console.error("[save] workflow", err)
       setSaveState("idle")
     }
-  }, [nodes, edges, workflowId])
+  }, [nodes, edges, workflowId, workflowName])
 
   // Apply one entry from the chosen stack. The current snapshot (the
   // one we're about to leave) is pushed onto the *opposite* stack so
@@ -1050,6 +1059,8 @@ export function Canvas({ workflowId }: CanvasProps = {}) {
           onDownloadHistory={handleDownloadHistory}
           onPreviewHistory={handlePreviewHistory}
           className="absolute top-4 right-4 z-10"
+          name={workflowName}
+          onNameChange={(next) => setWorkflowName(next)}
         />
 
         {hasManuellTrigger && !isPreviewMode ? (
