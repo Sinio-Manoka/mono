@@ -54,7 +54,7 @@ export class WorkflowExistsError extends Error {
 | `getWorkflow(id: string): Promise<WorkflowSnapshot \| null>` | Read file, parse, return `null` on ENOENT or parse failure. |
 | `saveWorkflow(id: string, snapshot: WorkflowSnapshot): Promise<void>` | `fs.mkdir(DATA_DIR, { recursive: true })` then `fs.writeFile`. |
 | `deleteWorkflow(id: string): Promise<void>` | `fs.unlink`; ignore ENOENT (treat as already gone). |
-| `createWorkflow(name: string): Promise<{ id: string }>` | Slugify `name` to derive `id` (lowercase, spaces→`-`, then `sanitizeId`); if a file already exists at `data/<id>.json`, throw `WorkflowExistsError`; otherwise `saveWorkflow(id, { nodes: [], edges: [] })` and return `{ id }`. |
+| `createWorkflow(name: string): Promise<{ id: string }>` | Derive `id = sanitizeId(name)` (preserves case, replaces anything outside `[a-zA-Z0-9_-]` with `_`, falls back to `"default"`). If a file already exists at `data/<id>.json`, throw `WorkflowExistsError`. Otherwise `saveWorkflow(id, { name, nodes: [], edges: [] })` and return `{ id }`. The initial snapshot includes the entered name so the dashboard card immediately shows it. |
 
 The `DATA_DIR` constant (`path.join(process.cwd(), "data")`) lives in this file. The existing `app/api/workflow/[id]/route.ts` is refactored to call these helpers and loses its own DATA_DIR / sanitizer constants.
 
@@ -158,7 +158,7 @@ No test runner wired up. Verification is manual + scripts:
    - Edit name in the sidebar to "Renamed", save → refresh `/` → card shows "Renamed".
    - Click delete on a card → confirm dialog → list updates.
    - Empty the directory manually, restart, visit `/` → empty state with "Create your first workflow" button.
-5. Sanitization check: create "Hello World!!" → URL becomes `/Hello_World__/workflow`.
+5. Sanitization check: create "Hello World!!" → id `Hello_World__` (preserves case, spaces→`_`, `!`→`_`) → URL `/Hello_World__/workflow`.
 
 ## Files touched
 
